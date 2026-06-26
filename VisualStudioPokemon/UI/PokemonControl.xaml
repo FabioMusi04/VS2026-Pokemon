@@ -4,33 +4,342 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             d:DesignHeight="380"
-             d:DesignWidth="640">
-    <Grid>
+             d:DesignHeight="460"
+             d:DesignWidth="780">
+
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="Pokemon.WindowBackgroundBrush" Color="#252526" />
+        <SolidColorBrush x:Key="Pokemon.CommandBarBackgroundBrush" Color="#2D2D30" />
+        <SolidColorBrush x:Key="Pokemon.PanelBackgroundBrush" Color="#252526" />
+        <SolidColorBrush x:Key="Pokemon.EditorBackgroundBrush" Color="#1E1E1E" />
+        <SolidColorBrush x:Key="Pokemon.BorderBrush" Color="#3F3F46" />
+        <SolidColorBrush x:Key="Pokemon.TextBrush" Color="#F1F1F1" />
+        <SolidColorBrush x:Key="Pokemon.MutedTextBrush" Color="#C8C8C8" />
+        <SolidColorBrush x:Key="Pokemon.ControlBackgroundBrush" Color="#333337" />
+        <SolidColorBrush x:Key="Pokemon.ControlBorderBrush" Color="#55555A" />
+        <SolidColorBrush x:Key="Pokemon.ButtonBackgroundBrush" Color="#3A3D41" />
+        <SolidColorBrush x:Key="Pokemon.AccentBrush" Color="#007ACC" />
+
+        <SolidColorBrush x:Key="Pokemon.ComboBoxEditableBackgroundBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="Pokemon.ComboBoxEditableTextBrush" Color="#1E1E1E" />
+
+        <Style x:Key="Pokemon.LabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="Pokemon.CaptionStyle" TargetType="TextBlock" BasedOn="{StaticResource Pokemon.LabelStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.MutedTextBrush}" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+
+        <!-- TextBox normale: NON modificata -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource Pokemon.ControlBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource Pokemon.AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Pokemon.ControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="5,3" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TextBox}">
+                        <Border x:Name="TextBoxBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <Grid>
+                                <ScrollViewer x:Name="PART_ContentHost"
+                                              Margin="{TemplateBinding Padding}" />
+                                <TextBlock x:Name="WatermarkText"
+                                           Text="{TemplateBinding Tag}"
+                                           Foreground="{DynamicResource Pokemon.MutedTextBrush}"
+                                           Margin="{TemplateBinding Padding}"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False"
+                                           Opacity="0.85"
+                                           Visibility="Collapsed" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Text" Value="">
+                                <Setter TargetName="WatermarkText" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="WatermarkText" Property="Visibility" Value="Collapsed" />
+                                <Setter TargetName="TextBoxBorder" Property="BorderBrush" Value="{DynamicResource Pokemon.AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.65" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Stile usato SOLO dal TextBox interno delle ComboBox editabili -->
+        <Style x:Key="Pokemon.ComboBoxEditableTextBoxStyle" TargetType="{x:Type TextBox}">
+            <Setter Property="Background" Value="{DynamicResource Pokemon.ComboBoxEditableBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.ComboBoxEditableTextBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource Pokemon.ComboBoxEditableTextBrush}" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource Pokemon.AccentBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="Pokemon.ComboBoxItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="{DynamicResource Pokemon.ControlBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBoxItem}">
+                        <Border x:Name="ItemBorder"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource Pokemon.AccentBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                                <Setter Property="TextElement.Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource Pokemon.AccentBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                                <Setter Property="TextElement.Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource Pokemon.MutedTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Style.Resources>
+                <Style TargetType="{x:Type TextBox}" BasedOn="{StaticResource Pokemon.ComboBoxEditableTextBoxStyle}" />
+            </Style.Resources>
+
+            <Setter Property="Background" Value="{DynamicResource Pokemon.ControlBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Pokemon.ControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="3" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource Pokemon.ComboBoxItemStyle}" />
+        </Style>
+
+        <Style x:Key="Pokemon.ListBoxItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="2" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource Pokemon.CommandBarBackgroundBrush}" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource Pokemon.AccentBrush}" />
+                    <Setter Property="Foreground" Value="White" />
+                    <Setter Property="TextElement.Foreground" Value="White" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource Pokemon.ButtonBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Pokemon.ControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="{DynamicResource Pokemon.ControlBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Pokemon.ControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource Pokemon.ListBoxItemStyle}" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Background="{DynamicResource Pokemon.WindowBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Padding="8" Background="#F5F5F5" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0"
+                Padding="10,7"
+                Background="{DynamicResource Pokemon.CommandBarBackgroundBrush}"
+                BorderBrush="{DynamicResource Pokemon.BorderBrush}"
+                BorderThickness="0,0,0,1">
             <DockPanel LastChildFill="True">
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Visual Studio Pokemon" Margin="0,0,12,0" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <ComboBox x:Name="SpeciesCombo" Width="150" Margin="0,0,6,0" DisplayMemberPath="DisplayName" />
-                    <TextBox x:Name="NameBox" Width="110" Margin="0,0,6,0" ToolTip="Nickname. Leave blank for a random name." />
-                    <ComboBox x:Name="SizeCombo" Width="90" Margin="0,0,6,0" />
-                    <CheckBox x:Name="ShinyCheck" Content="Shiny" Margin="0,0,8,0" VerticalAlignment="Center" />
-                    <Button Content="Spawn" Margin="0,0,6,0" Padding="10,3" Click="SpawnButton_Click" />
-                    <Button Content="Random" Margin="0,0,6,0" Padding="10,3" Click="RandomButton_Click" />
-                    <Button Content="Remove all" Margin="0,0,6,0" Padding="10,3" Click="RemoveAllButton_Click" />
-                    <Button Content="Roll-call" Padding="10,3" Click="RollCallButton_Click" />
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Roll-call" Click="RollCallButton_Click" />
+                    <Button Content="Remove all" Click="RemoveAllButton_Click" Margin="0" />
                 </StackPanel>
-                <TextBlock x:Name="StatusText" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#666666" />
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Visual Studio Pokemon"
+                               Style="{StaticResource Pokemon.LabelStyle}"
+                               FontWeight="SemiBold"
+                               Margin="0,0,12,0" />
+                    <Border Width="1"
+                            Height="18"
+                            Background="{DynamicResource Pokemon.BorderBrush}"
+                            Margin="0,0,12,0" />
+                    <TextBlock x:Name="StatusText"
+                               Style="{StaticResource Pokemon.CaptionStyle}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="1" Background="#1E1E1E">
-            <Canvas x:Name="Playground" ClipToBounds="True" SizeChanged="Playground_SizeChanged" />
-        </Border>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="270" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{DynamicResource Pokemon.PanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource Pokemon.BorderBrush}"
+                    BorderThickness="0,0,1,0"
+                    Padding="10">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0">
+                        <TextBlock Text="Spawn"
+                                   Style="{StaticResource Pokemon.LabelStyle}"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,8" />
+
+                        <TextBlock Text="Species"
+                                   Style="{StaticResource Pokemon.CaptionStyle}"
+                                   Margin="0,0,0,3" />
+                        <ComboBox x:Name="SpeciesCombo"
+                                  DisplayMemberPath="DisplayName"
+                                  IsEditable="True"
+                                  IsTextSearchEnabled="False"
+                                  StaysOpenOnEdit="True"
+                                  MaxDropDownHeight="260"
+                                  Margin="0,0,0,8"
+                                  PreviewKeyDown="SpeciesCombo_PreviewKeyDown" />
+
+                        <TextBlock Text="Nickname"
+                                   Style="{StaticResource Pokemon.CaptionStyle}"
+                                   Margin="0,0,0,3" />
+                        <TextBox x:Name="NameBox"
+                                 Margin="0,0,0,8"
+                                 Tag="Optional nickname"
+                                 ToolTip="Nickname. Leave blank for a random name." />
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                <TextBlock Text="Size"
+                                           Style="{StaticResource Pokemon.CaptionStyle}"
+                                           Margin="0,0,0,3" />
+                                <ComboBox x:Name="SizeCombo" IsEditable="True" />
+                            </StackPanel>
+
+                            <CheckBox x:Name="ShinyCheck"
+                                      Grid.Column="1"
+                                      Content="Shiny"
+                                      VerticalAlignment="Bottom"
+                                      Margin="0,0,0,3" />
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Spawn" Click="SpawnButton_Click" />
+                            <Button Content="Random" Click="RandomButton_Click" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Border Grid.Row="1"
+                            Height="1"
+                            Margin="0,14,0,14"
+                            Background="{DynamicResource Pokemon.BorderBrush}" />
+
+                    <Grid Grid.Row="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                            <TextBlock Text="Spawned companions"
+                                       Style="{StaticResource Pokemon.LabelStyle}"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,8" />
+                            <TextBlock Text="Select one to inspect or remove"
+                                       Style="{StaticResource Pokemon.CaptionStyle}"
+                                       Margin="0,0,0,3" />
+                            <ComboBox x:Name="SpawnedCombo"
+                                      IsEditable="True"
+                                      DisplayMemberPath="DisplayLabel"
+                                      MaxDropDownHeight="180"
+                                      SelectionChanged="SpawnedCombo_SelectionChanged" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                            <TextBlock x:Name="SelectedDetailsText"
+                                       Text="Click a Pokemon in the playground or select it here."
+                                       Style="{StaticResource Pokemon.CaptionStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,8" />
+
+                            <Button x:Name="RemoveSelectedButton"
+                                    Content="Remove selected Pokemon"
+                                    Click="RemoveSelectedButton_Click"
+                                    IsEnabled="False"
+                                    Margin="0" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="1"
+                    Margin="10"
+                    Background="{DynamicResource Pokemon.EditorBackgroundBrush}"
+                    BorderBrush="{DynamicResource Pokemon.BorderBrush}"
+                    BorderThickness="1" MouseLeftButtonDown="Border_MouseLeftButtonDown" >
+                <Canvas x:Name="Playground"
+                        ClipToBounds="True"
+                        SizeChanged="Playground_SizeChanged" />
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

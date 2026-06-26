@@ -12,18 +12,6 @@ namespace VisualStudioPokemon.Services
         private static readonly Random Random = new Random();
         private static readonly Lazy<IReadOnlyList<PokemonSpecies>> ItemsLazy = new Lazy<IReadOnlyList<PokemonSpecies>>(LoadSpeciesFromResources);
 
-        private static readonly string[] RandomNames = new[]
-        {
-            "Bella", "Charlie", "Molly", "Coco", "Ruby", "Oscar", "Lucy", "Bailey", "Milo", "Daisy",
-            "Archie", "Ollie", "Rosie", "Lola", "Frankie", "Roxy", "Poppy", "Luna", "Jack", "Millie",
-            "Teddy", "Cooper", "Bear", "Rocky", "Alfie", "Hugo", "Bonnie", "Pepper", "Lily", "Tilly",
-            "Leo", "Maggie", "George", "Mia", "Marley", "Harley", "Chloe", "Lulu", "Missy", "Jasper",
-            "Billy", "Nala", "Monty", "Ziggy", "Winston", "Zeus", "Zoe", "Stella", "Sasha", "Rusty",
-            "Gus", "Baxter", "Dexter", "Willow", "Barney", "Bruno", "Penny", "Honey", "Milly", "Murphy",
-            "Simba", "Holly", "Benji", "Henry", "Lilly", "Pippa", "Shadow", "Sam", "Lucky", "Ellie",
-            "Duke", "Jessie", "Cookie", "Harvey", "Bruce", "Jax", "Rex", "Louie", "Jet", "Banjo"
-        };
-
         public static IReadOnlyList<PokemonSpecies> All
         {
             get { return ItemsLazy.Value; }
@@ -38,11 +26,6 @@ namespace VisualStudioPokemon.Services
         {
             IReadOnlyList<PokemonSpecies> items = All;
             return items[Random.Next(items.Count)];
-        }
-
-        public static string GetRandomName()
-        {
-            return RandomNames[Random.Next(RandomNames.Length)];
         }
 
         private static IReadOnlyList<PokemonSpecies> LoadSpeciesFromResources()

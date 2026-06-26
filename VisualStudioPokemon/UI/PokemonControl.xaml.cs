@@ -1,38 +1,68 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using VisualStudioPokemon.Models;
 using VisualStudioPokemon.Services;
+using DrawingColor = System.Drawing.Color;
+using MediaColor = System.Windows.Media.Color;
 
 namespace VisualStudioPokemon.UI
 {
     public partial class PokemonControl : UserControl
     {
+        private const double PlaygroundPadding = 12;
+        private const double MinimumCompanionGap = 8;
+
         private readonly Random random = new Random();
         private readonly DispatcherTimer animationTimer;
         private readonly PokemonSessionStore store = new PokemonSessionStore();
-        private readonly List<Companion> companions = new List<Companion>();
+        private readonly ObservableCollection<Companion> companions = new ObservableCollection<Companion>();
+        private readonly ICollectionView speciesView;
         private bool restored;
+        private bool suppressSpeciesFilter;
+        private bool suppressCompanionSelection;
+        private Companion selectedCompanion;
+        private Delegate vsThemeChangedHandler;
 
         public PokemonControl()
         {
             InitializeComponent();
 
-            SpeciesCombo.ItemsSource = PokemonCatalog.All;
+            ApplyTheme();
+            TryHookVsThemeChanged();
+
+            speciesView = CollectionViewSource.GetDefaultView(PokemonCatalog.All);
+            SpeciesCombo.ItemsSource = speciesView;
             SpeciesCombo.SelectedIndex = PokemonCatalog.All.Count > 0 ? 0 : -1;
+            SpeciesCombo.AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler(SpeciesCombo_TextChanged));
+
             SizeCombo.ItemsSource = Enum.GetValues(typeof(PokemonSize));
             SizeCombo.SelectedItem = PokemonSize.Medium;
+
+            SpawnedCombo.ItemsSource = companions;
+
+            HookComboBoxChrome(SpeciesCombo, fixSelectedValueContrast: false);
+            HookComboBoxChrome(SizeCombo, fixSelectedValueContrast: false);
+            HookComboBoxChrome(SpawnedCombo, fixSelectedValueContrast: false);
 
             animationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
             animationTimer.Tick += AnimationTimer_Tick;
             animationTimer.Start();
 
             Loaded += PokemonControl_Loaded;
+            Unloaded += PokemonControl_Unloaded;
         }
 
         public void EnsureStarted()
@@ -41,18 +71,19 @@ namespace VisualStudioPokemon.UI
             if (companions.Count == 0)
             {
                 PokemonSpecies first = PokemonCatalog.All.FirstOrDefault() ?? PokemonCatalog.Find("bulbasaur");
-                SpawnPokemon(new PokemonSpec(first.Key, first.DisplayName, PokemonCatalog.GetRandomName(), PokemonSize.Medium, false));
+                SpawnPokemon(new PokemonSpec(first.Key, first.DisplayName, first.DisplayName, PokemonSize.Medium, false));
             }
         }
 
         public void SpawnSelectedFromToolbar()
         {
             EnsureRestored();
-            var species = SpeciesCombo.SelectedItem as PokemonSpecies ?? PokemonCatalog.All[0];
-            string nickname = String.IsNullOrWhiteSpace(NameBox.Text) ? PokemonCatalog.GetRandomName() : NameBox.Text.Trim();
+            PokemonSpecies species = ResolveSpeciesFromCombo();
+            string nickname = String.IsNullOrWhiteSpace(NameBox.Text) ? species.DisplayName : NameBox.Text.Trim();
             var size = SizeCombo.SelectedItem is PokemonSize ? (PokemonSize)SizeCombo.SelectedItem : PokemonSize.Medium;
             SpawnPokemon(new PokemonSpec(species.Key, species.DisplayName, nickname, size, ShinyCheck.IsChecked == true));
             NameBox.Text = String.Empty;
+            ResetSpeciesFilter(species);
         }
 
         public void SpawnRandom()
@@ -61,16 +92,37 @@ namespace VisualStudioPokemon.UI
             PokemonSpecies species = PokemonCatalog.GetRandomSpecies();
             var size = SizeCombo.SelectedItem is PokemonSize ? (PokemonSize)SizeCombo.SelectedItem : PokemonSize.Medium;
             bool shiny = ShinyCheck.IsChecked == true || random.Next(8192) == 0;
-            SpawnPokemon(new PokemonSpec(species.Key, species.DisplayName, PokemonCatalog.GetRandomName(), size, shiny));
+            SpawnPokemon(new PokemonSpec(species.Key, species.DisplayName, species.DisplayName, size, shiny));
+            ResetSpeciesFilter(species);
         }
 
         public void RemoveAll()
         {
             EnsureRestored();
+
+            foreach (Companion companion in companions)
+            {
+                companion.SpeechTimer.Stop();
+            }
+
+            selectedCompanion = null;
             companions.Clear();
             Playground.Children.Clear();
+            SyncCompanionSelectors();
             store.Save(Enumerable.Empty<PokemonSpec>());
+            UpdateSelectionUi();
             UpdateStatus();
+        }
+
+        public void RemoveSelected()
+        {
+            EnsureRestored();
+            if (selectedCompanion == null)
+            {
+                return;
+            }
+
+            RemoveCompanion(selectedCompanion);
         }
 
         public void RollCall()
@@ -94,7 +146,13 @@ namespace VisualStudioPokemon.UI
         private void PokemonControl_Loaded(object sender, RoutedEventArgs e)
         {
             EnsureRestored();
+            UpdateSelectionUi();
             UpdateStatus();
+        }
+
+        private void PokemonControl_Unloaded(object sender, RoutedEventArgs e)
+        {
+            TryUnhookVsThemeChanged();
         }
 
         private void SpawnButton_Click(object sender, RoutedEventArgs e)
@@ -112,9 +170,58 @@ namespace VisualStudioPokemon.UI
             RemoveAll();
         }
 
+        private void RemoveSelectedButton_Click(object sender, RoutedEventArgs e)
+        {
+            RemoveSelected();
+        }
+
+        private void RemoveCompanionItemButton_Click(object sender, RoutedEventArgs e)
+        {
+            FrameworkElement element = sender as FrameworkElement;
+            Companion companion = element != null ? element.Tag as Companion : null;
+            if (companion == null)
+            {
+                return;
+            }
+
+            SelectCompanion(companion, fromList: false);
+            RemoveCompanion(companion);
+            e.Handled = true;
+        }
+
         private void RollCallButton_Click(object sender, RoutedEventArgs e)
         {
             RollCall();
+        }
+
+        private void SpawnedCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (suppressCompanionSelection)
+            {
+                return;
+            }
+
+            SelectCompanion(SpawnedCombo.SelectedItem as Companion, fromList: true);
+        }
+
+        private void SpeciesCombo_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                SpawnSelectedFromToolbar();
+                e.Handled = true;
+            }
+        }
+
+        private void SpeciesCombo_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (suppressSpeciesFilter || !SpeciesCombo.IsKeyboardFocusWithin)
+            {
+                return;
+            }
+
+            ApplySpeciesFilter(SpeciesCombo.Text);
+            SpeciesCombo.IsDropDownOpen = true;
         }
 
         private void Playground_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -151,7 +258,8 @@ namespace VisualStudioPokemon.UI
             {
                 Width = width,
                 Height = height + 20,
-                ClipToBounds = false
+                ClipToBounds = false,
+                ToolTip = spec.Nickname + " - " + spec.DisplayName
             };
 
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(height) });
@@ -162,6 +270,7 @@ namespace VisualStudioPokemon.UI
 
             Image speechBubble = CreateSpeechBubble();
             Grid.SetRow(speechBubble, 0);
+            Panel.SetZIndex(speechBubble, 30);
             root.Children.Add(speechBubble);
 
             var label = new TextBlock
@@ -181,21 +290,49 @@ namespace VisualStudioPokemon.UI
                 }
             };
             Grid.SetRow(label, 1);
+            Panel.SetZIndex(label, 20);
             root.Children.Add(label);
 
-            var companion = new Companion(spec, root, sprite as IPokemonSpriteView, speechBubble)
+            Border selectionRing = CreateSelectionRing();
+            Grid.SetRowSpan(selectionRing, 2);
+            Panel.SetZIndex(selectionRing, 10);
+            root.Children.Add(selectionRing);
+
+            var companion = new Companion(spec, root, sprite as IPokemonSpriteView, speechBubble, selectionRing)
             {
-                X = random.NextDouble() * Math.Max(1, Playground.ActualWidth - root.Width),
-                BaseY = Math.Max(0, Playground.ActualHeight - root.Height - 10 - random.Next(0, 35)),
-                Speed = random.NextDouble() * 1.2 + 0.45,
+                Lane = 0,
+                Speed = random.NextDouble() * 0.8 + 0.5,
                 Phase = random.NextDouble() * Math.PI * 2,
-                HoldFrames = random.Next(35, 95)
+                HoldFrames = random.Next(45, 110)
             };
 
-            root.MouseLeftButtonDown += delegate
+            companion.BaseY = GetRandomBaseY(companion);
+            companion.X = FindOpenTarget(companion, MovementMinX(companion), MovementMaxX(companion), preferFarAway: false);
+            companion.TargetX = companion.X;
+
+            root.Cursor = Cursors.Hand;
+            root.MouseLeftButtonDown += delegate (object clickSender, MouseButtonEventArgs args)
             {
+                SelectCompanion(companion, fromList: false);
                 Swipe(companion);
+                args.Handled = true;
             };
+
+            root.MouseRightButtonDown += delegate (object clickSender, MouseButtonEventArgs args)
+            {
+                SelectCompanion(companion, fromList: false);
+                args.Handled = true;
+            };
+
+            var removeThisMenuItem = new MenuItem { Header = "Remove this Pokemon" };
+            removeThisMenuItem.Click += delegate
+            {
+                SelectCompanion(companion, fromList: false);
+                RemoveCompanion(companion);
+            };
+            var contextMenu = new ContextMenu();
+            contextMenu.Items.Add(removeThisMenuItem);
+            root.ContextMenu = contextMenu;
 
             Playground.Children.Add(root);
             companions.Add(companion);
@@ -205,10 +342,53 @@ namespace VisualStudioPokemon.UI
 
             if (save)
             {
-                store.Save(companions.Select(c => c.Spec));
+                SaveSession();
             }
 
             UpdateStatus();
+        }
+
+        private Border CreateSelectionRing()
+        {
+            Brush accentBrush = GetBrushResource("Pokemon.AccentBrush", Brushes.DeepSkyBlue);
+            MediaColor accentColor = Colors.DodgerBlue;
+            SolidColorBrush solidAccent = accentBrush as SolidColorBrush;
+            if (solidAccent != null)
+            {
+                accentColor = solidAccent.Color;
+            }
+
+            var selectedFill = new SolidColorBrush(MediaColor.FromArgb(38, accentColor.R, accentColor.G, accentColor.B));
+
+            return new Border
+            {
+                BorderBrush = accentBrush,
+                Background = selectedFill,
+                BorderThickness = new Thickness(3),
+                CornerRadius = new CornerRadius(6),
+                Margin = new Thickness(-6),
+                Visibility = Visibility.Collapsed,
+                IsHitTestVisible = false,
+                Child = new TextBlock
+                {
+                    Text = "SELECTED",
+                    Background = accentBrush,
+                    Foreground = Brushes.White,
+                    FontSize = 9,
+                    FontWeight = FontWeights.Bold,
+                    Padding = new Thickness(5, 1, 5, 1),
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Margin = new Thickness(0, -1, -1, 0)
+                },
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 14,
+                    ShadowDepth = 0,
+                    Opacity = 0.85,
+                    Color = accentColor
+                }
+            };
         }
 
         private Image CreateSpeechBubble()
@@ -239,7 +419,7 @@ namespace VisualStudioPokemon.UI
                 return;
             }
 
-            foreach (Companion companion in companions)
+            foreach (Companion companion in companions.ToList())
             {
                 companion.FramesInState++;
 
@@ -255,35 +435,163 @@ namespace VisualStudioPokemon.UI
                     case PokemonAnimationState.Idle:
                         if (companion.FramesInState > companion.HoldFrames)
                         {
-                            SetState(companion, random.Next(2) == 0 ? PokemonAnimationState.WalkLeft : PokemonAnimationState.WalkRight);
+                            BeginWalk(companion);
                         }
                         break;
 
                     case PokemonAnimationState.WalkLeft:
-                        companion.X -= companion.Speed;
-                        if (companion.X <= 0 || companion.FramesInState > 60 && random.NextDouble() < 0.01)
-                        {
-                            companion.X = Math.Max(0, companion.X);
-                            SetState(companion, PokemonAnimationState.Idle);
-                        }
-                        break;
-
                     case PokemonAnimationState.WalkRight:
-                        companion.X += companion.Speed;
-                        double maxX = Math.Max(0, Playground.ActualWidth - companion.Visual.Width);
-                        if (companion.X >= maxX || companion.FramesInState > 60 && random.NextDouble() < 0.01)
-                        {
-                            companion.X = Math.Min(maxX, companion.X);
-                            SetState(companion, PokemonAnimationState.Idle);
-                        }
+                        StepTowardTarget(companion);
                         break;
                 }
 
-                double bob = companion.State == PokemonAnimationState.Idle
+                companion.CurrentBob = companion.State == PokemonAnimationState.Idle
                     ? 0
-                    : Math.Sin(companion.FramesInState * 0.28 + companion.Phase) * 2.2;
+                    : Math.Sin(companion.FramesInState * 0.22 + companion.Phase) * 1.4;
+            }
 
-                Position(companion, bob);
+            foreach (Companion companion in companions)
+            {
+                Position(companion, companion.CurrentBob);
+            }
+        }
+
+        private void BeginWalk(Companion companion)
+        {
+            double minX = MovementMinX(companion);
+            double maxX = MovementMaxX(companion);
+            if (maxX <= minX)
+            {
+                companion.X = minX;
+                SetState(companion, PokemonAnimationState.Idle);
+                return;
+            }
+
+            double target = FindOpenTarget(companion, minX, maxX, preferFarAway: true);
+            target = Math.Max(minX, Math.Min(maxX, target));
+
+            if (Math.Abs(target - companion.X) < 3)
+            {
+                companion.HoldFrames = random.Next(45, 120);
+                companion.FramesInState = 0;
+                return;
+            }
+
+            companion.TargetX = target;
+            SetState(companion, target < companion.X ? PokemonAnimationState.WalkLeft : PokemonAnimationState.WalkRight);
+        }
+
+        private void StepTowardTarget(Companion companion)
+        {
+            double minX = MovementMinX(companion);
+            double maxX = MovementMaxX(companion);
+            companion.TargetX = Math.Max(minX, Math.Min(maxX, companion.TargetX));
+
+            double delta = companion.TargetX - companion.X;
+            if (Math.Abs(delta) <= companion.Speed)
+            {
+                companion.X = companion.TargetX;
+                SetState(companion, PokemonAnimationState.Idle);
+                return;
+            }
+
+            companion.X += Math.Sign(delta) * companion.Speed;
+            if (companion.X <= minX || companion.X >= maxX)
+            {
+                companion.X = Math.Max(minX, Math.Min(maxX, companion.X));
+                SetState(companion, PokemonAnimationState.Idle);
+            }
+        }
+
+        private double FindOpenTarget(Companion companion, double minX, double maxX, bool preferFarAway)
+        {
+            if (maxX <= minX)
+            {
+                return minX;
+            }
+
+            double fallback = minX + random.NextDouble() * (maxX - minX);
+            double minimumMove = Math.Min(80, Math.Max(24, (maxX - minX) * 0.25));
+
+            for (int attempt = 0; attempt < 16; attempt++)
+            {
+                double candidate = minX + random.NextDouble() * (maxX - minX);
+                fallback = candidate;
+
+                if (!preferFarAway || Math.Abs(candidate - companion.X) >= minimumMove)
+                {
+                    return candidate;
+                }
+            }
+
+            return fallback;
+        }
+
+        private bool WouldOverlapAtTarget(Companion companion, double candidateX)
+        {
+            foreach (Companion other in companions)
+            {
+                if (ReferenceEquals(other, companion) || other.Lane != companion.Lane)
+                {
+                    continue;
+                }
+
+                double left = candidateX - MinimumCompanionGap;
+                double right = candidateX + companion.Visual.Width + MinimumCompanionGap;
+                double otherLeft = other.X;
+                double otherRight = other.X + other.Visual.Width;
+
+                if (left < otherRight && right > otherLeft)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void ResolveHorizontalSpacing()
+        {
+            if (companions.Count <= 1 || Playground.ActualWidth <= 1)
+            {
+                return;
+            }
+
+            foreach (IGrouping<int, Companion> lane in companions.GroupBy(c => c.Lane))
+            {
+                List<Companion> ordered = lane.OrderBy(c => c.X).ToList();
+                double nextLeft = PlaygroundPadding;
+
+                foreach (Companion companion in ordered)
+                {
+                    double maxX = MovementMaxX(companion);
+                    companion.X = Math.Max(MovementMinX(companion), Math.Min(maxX, companion.X));
+                    if (companion.X < nextLeft)
+                    {
+                        companion.X = Math.Min(maxX, nextLeft);
+                    }
+
+                    nextLeft = companion.X + companion.Visual.Width + MinimumCompanionGap;
+                }
+
+                if (ordered.Count == 0)
+                {
+                    continue;
+                }
+
+                Companion last = ordered[ordered.Count - 1];
+                double overflow = last.X + last.Visual.Width + PlaygroundPadding - Playground.ActualWidth;
+                if (overflow > 0)
+                {
+                    for (int i = ordered.Count - 1; i >= 0; i--)
+                    {
+                        Companion companion = ordered[i];
+                        companion.X = Math.Max(MovementMinX(companion), companion.X - overflow);
+                        overflow = i > 0
+                            ? Math.Max(0, ordered[i - 1].X + ordered[i - 1].Visual.Width + MinimumCompanionGap - companion.X)
+                            : 0;
+                    }
+                }
             }
         }
 
@@ -297,7 +605,7 @@ namespace VisualStudioPokemon.UI
         {
             companion.State = state;
             companion.FramesInState = 0;
-            companion.HoldFrames = state == PokemonAnimationState.Idle ? random.Next(35, 95) : companion.HoldFrames;
+            companion.HoldFrames = state == PokemonAnimationState.Idle ? random.Next(55, 140) : companion.HoldFrames;
             if (companion.Sprite != null)
             {
                 companion.Sprite.SetAnimation(state);
@@ -332,25 +640,520 @@ namespace VisualStudioPokemon.UI
 
         private void ClampToPlayground(Companion companion)
         {
-            double maxX = Math.Max(0, Playground.ActualWidth - companion.Visual.Width);
-            double maxY = Math.Max(0, Playground.ActualHeight - companion.Visual.Height - 8);
-            companion.X = Math.Max(0, Math.Min(maxX, companion.X));
-            companion.BaseY = Math.Max(0, Math.Min(maxY, companion.BaseY));
+            companion.X = Math.Max(MovementMinX(companion), Math.Min(MovementMaxX(companion), companion.X));
+            companion.TargetX = Math.Max(MovementMinX(companion), Math.Min(MovementMaxX(companion), companion.TargetX));
+
+            double maxY = Playground.ActualHeight <= 1
+                ? PlaygroundPadding
+                : Math.Max(PlaygroundPadding, Playground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
+            companion.BaseY = Math.Max(PlaygroundPadding, Math.Min(maxY, companion.BaseY));
+        }
+
+        private double GetRandomBaseY(Companion companion)
+        {
+            if (Playground.ActualHeight <= 1)
+            {
+                return PlaygroundPadding;
+            }
+
+            double maxY = Math.Max(PlaygroundPadding, Playground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
+            double minY = Math.Max(PlaygroundPadding, maxY - 36);
+            return minY + random.NextDouble() * Math.Max(1, maxY - minY);
+        }
+
+        private int ChooseLeastBusyLane()
+        {
+            int laneCount = GetAvailableLaneCount();
+            if (laneCount <= 1)
+            {
+                return 0;
+            }
+
+            int bestLane = 0;
+            int bestCount = Int32.MaxValue;
+            for (int lane = 0; lane < laneCount; lane++)
+            {
+                int count = companions.Count(c => c.Lane == lane);
+                if (count < bestCount)
+                {
+                    bestCount = count;
+                    bestLane = lane;
+                }
+            }
+
+            return bestLane;
+        }
+
+        private void ReflowCompanionLanes()
+        {
+            if (companions.Count == 0)
+            {
+                return;
+            }
+
+            int laneCount = GetAvailableLaneCount();
+            for (int i = 0; i < companions.Count; i++)
+            {
+                Companion companion = companions[i];
+                if (companion.Lane < 0 || companion.Lane >= laneCount)
+                {
+                    companion.Lane = i % laneCount;
+                }
+
+                companion.BaseY = GetBaseYForLane(companion);
+                ClampToPlayground(companion);
+            }
+        }
+
+        private int GetAvailableLaneCount()
+        {
+            if (Playground.ActualHeight <= 1)
+            {
+                return 1;
+            }
+
+            return Math.Max(1, (int)Math.Floor((Playground.ActualHeight - PlaygroundPadding * 2) / GetLaneHeight()));
+        }
+
+        private double GetLaneHeight()
+        {
+            double tallest = companions.Count == 0 ? 98 : companions.Max(c => c.Visual.Height);
+            return Math.Max(64, tallest + 18);
+        }
+
+        private double GetBaseYForLane(Companion companion)
+        {
+            if (Playground.ActualHeight <= 1)
+            {
+                return PlaygroundPadding;
+            }
+
+            double y = Playground.ActualHeight - PlaygroundPadding - companion.Visual.Height - companion.Lane * GetLaneHeight();
+            return Math.Max(PlaygroundPadding, y);
+        }
+
+        private double MovementMinX(Companion companion)
+        {
+            return PlaygroundPadding;
+        }
+
+        private double MovementMaxX(Companion companion)
+        {
+            if (Playground.ActualWidth <= 1)
+            {
+                return PlaygroundPadding;
+            }
+
+            return Math.Max(PlaygroundPadding, Playground.ActualWidth - PlaygroundPadding - companion.Visual.Width);
+        }
+
+        private void SelectCompanion(Companion companion, bool fromList)
+        {
+            _ = fromList;
+
+            selectedCompanion = companion;
+            ApplySelectedCompanionVisuals();
+            SyncCompanionSelectors();
+            UpdateSelectionUi();
+            UpdateStatus();
+        }
+
+        private void ApplySelectedCompanionVisuals()
+        {
+            foreach (Companion item in companions)
+            {
+                bool isSelected = ReferenceEquals(item, selectedCompanion);
+                item.SelectionRing.Visibility = isSelected ? Visibility.Visible : Visibility.Collapsed;
+                Panel.SetZIndex(item.Visual, isSelected ? 1000 : 0);
+
+                // Keep the reaction icon above the SELECTED badge whenever it is visible.
+                Panel.SetZIndex(item.SelectionRing, 10);
+                Panel.SetZIndex(item.SpeechBubble, 30);
+            }
+        }
+
+        private void SyncCompanionSelectors()
+        {
+            suppressCompanionSelection = true;
+            SpawnedCombo.SelectedItem = selectedCompanion;
+            suppressCompanionSelection = false;
+        }
+
+        private void RemoveCompanion(Companion companion)
+        {
+            companion.SpeechTimer.Stop();
+            Playground.Children.Remove(companion.Visual);
+            companions.Remove(companion);
+
+            if (ReferenceEquals(selectedCompanion, companion))
+            {
+                selectedCompanion = companions.FirstOrDefault();
+            }
+
+            ApplySelectedCompanionVisuals();
+            SyncCompanionSelectors();
+
+            foreach (Companion item in companions)
+            {
+                ClampToPlayground(item);
+                Position(item, 0);
+            }
+
+            SaveSession();
+            UpdateSelectionUi();
+            UpdateStatus();
+        }
+
+        private void UpdateSelectionUi()
+        {
+            SpawnedCombo.IsEnabled = companions.Count > 0;
+            RemoveSelectedButton.IsEnabled = selectedCompanion != null;
+            SelectedDetailsText.Text = selectedCompanion == null
+                ? "Click a Pokemon in the playground or choose it from the dropdown."
+                : "Selected: " + selectedCompanion.DisplayLabel + ". Use Remove selected or right-click it.";
         }
 
         private void UpdateStatus()
         {
-            StatusText.Text = companions.Count == 1 ? "1 companion" : companions.Count + " companions";
+            string countText = companions.Count == 1 ? "1 companion" : companions.Count + " companions";
+            if (selectedCompanion != null)
+            {
+                countText += " - " + selectedCompanion.Spec.Nickname + " selected";
+            }
+
+            StatusText.Text = countText;
         }
 
-        private sealed class Companion
+        private void SaveSession()
         {
-            public Companion(PokemonSpec spec, FrameworkElement visual, IPokemonSpriteView sprite, Image speechBubble)
+            store.Save(companions.Select(c => c.Spec));
+        }
+
+        private PokemonSpecies ResolveSpeciesFromCombo()
+        {
+            string text = (SpeciesCombo.Text ?? String.Empty).Trim();
+            if (!String.IsNullOrWhiteSpace(text))
+            {
+                PokemonSpecies exact = PokemonCatalog.All.FirstOrDefault(s =>
+                    StringComparer.CurrentCultureIgnoreCase.Equals(s.DisplayName, text) ||
+                    StringComparer.OrdinalIgnoreCase.Equals(s.Key, text));
+                if (exact != null)
+                {
+                    return exact;
+                }
+
+                PokemonSpecies startsWith = PokemonCatalog.All.FirstOrDefault(s =>
+                    s.DisplayName.StartsWith(text, StringComparison.CurrentCultureIgnoreCase) ||
+                    s.Key.StartsWith(text.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase));
+                if (startsWith != null)
+                {
+                    return startsWith;
+                }
+
+                PokemonSpecies contains = PokemonCatalog.All.FirstOrDefault(s =>
+                    s.DisplayName.IndexOf(text, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
+                    s.Key.IndexOf(text.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase) >= 0);
+                if (contains != null)
+                {
+                    return contains;
+                }
+            }
+
+            var selected = SpeciesCombo.SelectedItem as PokemonSpecies;
+            if (selected != null)
+            {
+                return selected;
+            }
+
+            return PokemonCatalog.All.FirstOrDefault() ?? PokemonCatalog.Find("bulbasaur");
+        }
+
+        private void ApplySpeciesFilter(string filter)
+        {
+            string normalized = (filter ?? String.Empty).Trim();
+            speciesView.Filter = delegate (object item)
+            {
+                var species = item as PokemonSpecies;
+                if (species == null || String.IsNullOrWhiteSpace(normalized))
+                {
+                    return true;
+                }
+
+                string key = normalized.Replace(' ', '_');
+                return species.DisplayName.IndexOf(normalized, StringComparison.CurrentCultureIgnoreCase) >= 0
+                    || species.Key.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0;
+            };
+
+            speciesView.Refresh();
+        }
+
+        private void ResetSpeciesFilter(PokemonSpecies species)
+        {
+            suppressSpeciesFilter = true;
+            speciesView.Filter = null;
+            speciesView.Refresh();
+            SpeciesCombo.SelectedItem = species;
+            SpeciesCombo.Text = species.DisplayName;
+            suppressSpeciesFilter = false;
+        }
+
+        private void ApplyTheme()
+        {
+            ThemePalette palette = ThemePalette.Create();
+            Resources["Pokemon.WindowBackgroundBrush"] = CreateFrozenBrush(palette.WindowBackground);
+            Resources["Pokemon.CommandBarBackgroundBrush"] = CreateFrozenBrush(palette.CommandBarBackground);
+            Resources["Pokemon.PanelBackgroundBrush"] = CreateFrozenBrush(palette.PanelBackground);
+            Resources["Pokemon.EditorBackgroundBrush"] = CreateFrozenBrush(palette.EditorBackground);
+            Resources["Pokemon.BorderBrush"] = CreateFrozenBrush(palette.Border);
+            Resources["Pokemon.TextBrush"] = CreateFrozenBrush(palette.Text);
+            Resources["Pokemon.MutedTextBrush"] = CreateFrozenBrush(palette.MutedText);
+            Resources["Pokemon.ControlBackgroundBrush"] = CreateFrozenBrush(palette.ControlBackground);
+            Resources["Pokemon.ControlBorderBrush"] = CreateFrozenBrush(palette.ControlBorder);
+            Resources["Pokemon.ButtonBackgroundBrush"] = CreateFrozenBrush(palette.ButtonBackground);
+            Resources["Pokemon.AccentBrush"] = CreateFrozenBrush(palette.Accent);
+
+            Resources[SystemColors.WindowBrushKey] = CreateFrozenBrush(palette.ControlBackground);
+            Resources[SystemColors.WindowTextBrushKey] = CreateFrozenBrush(palette.Text);
+            Resources[SystemColors.ControlBrushKey] = CreateFrozenBrush(palette.ControlBackground);
+            Resources[SystemColors.ControlTextBrushKey] = CreateFrozenBrush(palette.Text);
+            Resources[SystemColors.InfoBrushKey] = CreateFrozenBrush(palette.ControlBackground);
+            Resources[SystemColors.InfoTextBrushKey] = CreateFrozenBrush(palette.Text);
+            Resources[SystemColors.HighlightBrushKey] = CreateFrozenBrush(palette.Accent);
+            Resources[SystemColors.HighlightTextBrushKey] = Brushes.White;
+            Resources[SystemColors.GrayTextBrushKey] = CreateFrozenBrush(palette.MutedText);
+
+            foreach (Companion companion in companions)
+            {
+                companion.SelectionRing.BorderBrush = GetBrushResource("Pokemon.AccentBrush", Brushes.DeepSkyBlue);
+            }
+
+            Dispatcher.BeginInvoke(new Action(RefreshComboBoxVisuals), DispatcherPriority.Loaded);
+        }
+
+        private void HookComboBoxChrome(ComboBox comboBox, bool fixSelectedValueContrast)
+        {
+            comboBox.Loaded += delegate { RefreshComboBoxVisual(comboBox, fixSelectedValueContrast); };
+            comboBox.DropDownOpened += delegate { RefreshComboBoxVisual(comboBox, fixSelectedValueContrast); };
+            comboBox.DropDownClosed += delegate { RefreshComboBoxVisual(comboBox, fixSelectedValueContrast); };
+            comboBox.SelectionChanged += delegate { RefreshComboBoxVisual(comboBox, fixSelectedValueContrast); };
+        }
+
+        private void RefreshComboBoxVisuals()
+        {
+            UpdateComboBoxVisuals(SpeciesCombo);
+            UpdateSelectedValueComboBoxVisuals(SizeCombo);
+            UpdateSelectedValueComboBoxVisuals(SpawnedCombo);
+        }
+
+        private void RefreshComboBoxVisual(ComboBox comboBox, bool fixSelectedValueContrast)
+        {
+            if (fixSelectedValueContrast)
+            {
+                UpdateSelectedValueComboBoxVisuals(comboBox);
+            }
+            else
+            {
+                UpdateComboBoxVisuals(comboBox);
+            }
+        }
+
+        private void UpdateComboBoxVisuals(ComboBox comboBox)
+        {
+            if (comboBox == null)
+            {
+                return;
+            }
+
+            Brush textBrush = GetBrushResource("Pokemon.TextBrush", Brushes.White);
+            Brush backgroundBrush = GetBrushResource("Pokemon.ControlBackgroundBrush", Brushes.DimGray);
+            Brush borderBrush = GetBrushResource("Pokemon.ControlBorderBrush", Brushes.Gray);
+            Brush accentBrush = GetBrushResource("Pokemon.AccentBrush", Brushes.DeepSkyBlue);
+
+            comboBox.Foreground = textBrush;
+            comboBox.Background = backgroundBrush;
+            comboBox.BorderBrush = borderBrush;
+            comboBox.Resources[SystemColors.WindowBrushKey] = backgroundBrush;
+            comboBox.Resources[SystemColors.WindowTextBrushKey] = textBrush;
+            comboBox.Resources[SystemColors.ControlBrushKey] = backgroundBrush;
+            comboBox.Resources[SystemColors.ControlTextBrushKey] = textBrush;
+            comboBox.Resources[SystemColors.HighlightBrushKey] = accentBrush;
+            comboBox.Resources[SystemColors.HighlightTextBrushKey] = Brushes.White;
+
+            TextBox editableTextBox = comboBox.Template.FindName("PART_EditableTextBox", comboBox) as TextBox;
+            if (editableTextBox != null)
+            {
+                Brush comboEditableTextBrush =
+                    GetBrushResource("Pokemon.ComboBoxEditableTextBrush", Brushes.Black);
+
+                Brush comboEditableBackgroundBrush =
+                    GetBrushResource("Pokemon.ComboBoxEditableBackgroundBrush", Brushes.White);
+
+                editableTextBox.Foreground = comboEditableTextBrush;
+                editableTextBox.Background = comboEditableBackgroundBrush;
+                editableTextBox.BorderBrush = comboEditableBackgroundBrush;
+                editableTextBox.CaretBrush = comboEditableTextBrush;
+                editableTextBox.SelectionBrush = accentBrush;
+            }
+
+            Popup popup = comboBox.Template.FindName("PART_Popup", comboBox) as Popup;
+            Border popupBorder = popup != null ? popup.Child as Border : null;
+            if (popupBorder != null)
+            {
+                popupBorder.Background = backgroundBrush;
+                popupBorder.BorderBrush = borderBrush;
+            }
+        }
+
+        private void UpdateSelectedValueComboBoxVisuals(ComboBox comboBox)
+        {
+            if (comboBox == null)
+            {
+                return;
+            }
+
+            comboBox.ApplyTemplate();
+
+            Brush backgroundBrush = GetBrushResource("Pokemon.ControlBackgroundBrush", Brushes.DimGray);
+            Brush borderBrush = GetBrushResource("Pokemon.ControlBorderBrush", Brushes.Gray);
+            Brush accentBrush = GetBrushResource("Pokemon.AccentBrush", Brushes.DeepSkyBlue);
+            Brush textBrush = EnsureReadableBrush(GetBrushResource("Pokemon.TextBrush", Brushes.White), backgroundBrush);
+
+            comboBox.Foreground = textBrush;
+            comboBox.SetValue(TextElement.ForegroundProperty, textBrush);
+            comboBox.Background = backgroundBrush;
+            comboBox.BorderBrush = borderBrush;
+
+            // These keys affect the closed ComboBox selection box. This fixes white text on a white
+            // selected value without changing the Species editable ComboBox behavior.
+            comboBox.Resources[SystemColors.WindowBrushKey] = backgroundBrush;
+            comboBox.Resources[SystemColors.WindowTextBrushKey] = textBrush;
+            comboBox.Resources[SystemColors.ControlBrushKey] = backgroundBrush;
+            comboBox.Resources[SystemColors.ControlTextBrushKey] = textBrush;
+            comboBox.Resources[SystemColors.HighlightBrushKey] = accentBrush;
+            comboBox.Resources[SystemColors.HighlightTextBrushKey] = Brushes.White;
+            comboBox.Resources[SystemColors.InactiveSelectionHighlightBrushKey] = backgroundBrush;
+            comboBox.Resources[SystemColors.InactiveSelectionHighlightTextBrushKey] = textBrush;
+
+            Popup popup = comboBox.Template.FindName("PART_Popup", comboBox) as Popup;
+            Border popupBorder = popup != null ? popup.Child as Border : null;
+            if (popupBorder != null)
+            {
+                popupBorder.Background = backgroundBrush;
+                popupBorder.BorderBrush = borderBrush;
+            }
+        }
+
+        private static Brush EnsureReadableBrush(Brush preferredTextBrush, Brush backgroundBrush)
+        {
+            SolidColorBrush text = preferredTextBrush as SolidColorBrush;
+            SolidColorBrush background = backgroundBrush as SolidColorBrush;
+            if (text == null || background == null)
+            {
+                return preferredTextBrush;
+            }
+
+            double contrast = Math.Abs(GetReadableLuminance(text.Color) - GetReadableLuminance(background.Color));
+            if (contrast >= 0.32)
+            {
+                return preferredTextBrush;
+            }
+
+            return GetReadableLuminance(background.Color) > 0.55 ? Brushes.Black : Brushes.White;
+        }
+
+        private static double GetReadableLuminance(MediaColor color)
+        {
+            return (0.299 * color.R + 0.587 * color.G + 0.114 * color.B) / 255.0;
+        }
+
+        private static SolidColorBrush CreateFrozenBrush(MediaColor color)
+        {
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
+        }
+
+        private Brush GetBrushResource(string key, Brush fallback)
+        {
+            return TryFindResource(key) as Brush ?? fallback;
+        }
+
+        private void TryHookVsThemeChanged()
+        {
+            if (vsThemeChangedHandler != null)
+            {
+                return;
+            }
+
+            try
+            {
+                Type vsColorTheme = ThemePalette.FindType("Microsoft.VisualStudio.PlatformUI.VSColorTheme");
+                if (vsColorTheme == null)
+                {
+                    return;
+                }
+
+                EventInfo themeChangedEvent = vsColorTheme.GetEvent("ThemeChanged", BindingFlags.Static | BindingFlags.Public);
+                MethodInfo handlerMethod = GetType().GetMethod("OnVsThemeChanged", BindingFlags.Instance | BindingFlags.NonPublic);
+                if (themeChangedEvent == null || handlerMethod == null)
+                {
+                    return;
+                }
+
+                vsThemeChangedHandler = Delegate.CreateDelegate(themeChangedEvent.EventHandlerType, this, handlerMethod);
+                themeChangedEvent.AddEventHandler(null, vsThemeChangedHandler);
+            }
+            catch
+            {
+                vsThemeChangedHandler = null;
+            }
+        }
+
+        private void TryUnhookVsThemeChanged()
+        {
+            if (vsThemeChangedHandler == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Type vsColorTheme = ThemePalette.FindType("Microsoft.VisualStudio.PlatformUI.VSColorTheme");
+                EventInfo themeChangedEvent = vsColorTheme != null ? vsColorTheme.GetEvent("ThemeChanged", BindingFlags.Static | BindingFlags.Public) : null;
+                if (themeChangedEvent != null)
+                {
+                    themeChangedEvent.RemoveEventHandler(null, vsThemeChangedHandler);
+                }
+            }
+            catch
+            {
+                // Best effort only. The extension still works with the current palette.
+            }
+
+            vsThemeChangedHandler = null;
+        }
+
+        private void OnVsThemeChanged(object sender, EventArgs e)
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                ApplyTheme();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(ApplyTheme));
+            }
+        }
+
+        public sealed class Companion
+        {
+            internal Companion(PokemonSpec spec, FrameworkElement visual, IPokemonSpriteView sprite, Image speechBubble, Border selectionRing)
             {
                 Spec = spec;
                 Visual = visual;
                 Sprite = sprite;
                 SpeechBubble = speechBubble;
+                SelectionRing = selectionRing;
                 SpeechTimer = new DispatcherTimer();
                 SpeechTimer.Tick += delegate
                 {
@@ -360,17 +1163,171 @@ namespace VisualStudioPokemon.UI
             }
 
             public PokemonSpec Spec { get; private set; }
-            public FrameworkElement Visual { get; private set; }
-            public IPokemonSpriteView Sprite { get; private set; }
-            public Image SpeechBubble { get; private set; }
-            public DispatcherTimer SpeechTimer { get; private set; }
-            public PokemonAnimationState State { get; set; }
-            public int FramesInState { get; set; }
-            public int HoldFrames { get; set; }
-            public double X { get; set; }
-            public double BaseY { get; set; }
-            public double Speed { get; set; }
-            public double Phase { get; set; }
+            internal FrameworkElement Visual { get; private set; }
+            internal IPokemonSpriteView Sprite { get; private set; }
+            internal Image SpeechBubble { get; private set; }
+            internal Border SelectionRing { get; private set; }
+            internal DispatcherTimer SpeechTimer { get; private set; }
+            internal PokemonAnimationState State { get; set; }
+            internal int FramesInState { get; set; }
+            internal int HoldFrames { get; set; }
+            internal int Lane { get; set; }
+            internal double X { get; set; }
+            internal double TargetX { get; set; }
+            internal double BaseY { get; set; }
+            internal double Speed { get; set; }
+            internal double Phase { get; set; }
+            internal double CurrentBob { get; set; }
+
+            public string DisplayLabel
+            {
+                get
+                {
+                    return Spec.Nickname + (Spec.Shiny ? " *" : String.Empty);
+                }
+            }
+
+            public string DetailsLabel
+            {
+                get
+                {
+                    return Spec.DisplayName + " - " + Spec.Size;
+                }
+            }
+        }
+
+        private sealed class ThemePalette
+        {
+            public MediaColor WindowBackground { get; private set; }
+            public MediaColor CommandBarBackground { get; private set; }
+            public MediaColor PanelBackground { get; private set; }
+            public MediaColor EditorBackground { get; private set; }
+            public MediaColor Border { get; private set; }
+            public MediaColor Text { get; private set; }
+            public MediaColor MutedText { get; private set; }
+            public MediaColor ControlBackground { get; private set; }
+            public MediaColor ControlBorder { get; private set; }
+            public MediaColor ButtonBackground { get; private set; }
+            public MediaColor Accent { get; private set; }
+
+            public static ThemePalette Create()
+            {
+                MediaColor toolWindowBackground = GetVsColor("ToolWindowBackgroundColorKey", FromRgb(0x25, 0x25, 0x26));
+                bool dark = IsDark(toolWindowBackground);
+
+                return new ThemePalette
+                {
+                    WindowBackground = toolWindowBackground,
+                    CommandBarBackground = GetVsColor("CommandBarGradientBeginColorKey", dark ? FromRgb(0x2D, 0x2D, 0x30) : FromRgb(0xF3, 0xF3, 0xF3)),
+                    PanelBackground = GetVsColor("ToolWindowBackgroundColorKey", dark ? FromRgb(0x25, 0x25, 0x26) : FromRgb(0xF5, 0xF5, 0xF5)),
+                    EditorBackground = GetVsColor("EditorExpansionFillColorKey", dark ? FromRgb(0x1E, 0x1E, 0x1E) : FromRgb(0xFF, 0xFF, 0xFF)),
+                    Border = GetVsColor("PanelBorderColorKey", dark ? FromRgb(0x3F, 0x3F, 0x46) : FromRgb(0xCC, 0xCC, 0xCC)),
+                    Text = GetVsColor("ToolWindowTextColorKey", dark ? FromRgb(0xF1, 0xF1, 0xF1) : FromRgb(0x1E, 0x1E, 0x1E)),
+                    MutedText = dark ? FromRgb(0xC8, 0xC8, 0xC8) : FromRgb(0x5F, 0x5F, 0x5F),
+                    ControlBackground = GetVsColor("ComboBoxBackgroundColorKey", dark ? FromRgb(0x33, 0x33, 0x37) : FromRgb(0xFF, 0xFF, 0xFF)),
+                    ControlBorder = GetVsColor("ComboBoxBorderColorKey", dark ? FromRgb(0x55, 0x55, 0x5A) : FromRgb(0xA6, 0xA6, 0xA6)),
+                    ButtonBackground = GetVsColor("ButtonFaceColorKey", dark ? FromRgb(0x3A, 0x3D, 0x41) : FromRgb(0xE1, 0xE1, 0xE1)),
+                    Accent = GetVsColor("AccentMediumColorKey", FromRgb(0x00, 0x7A, 0xCC))
+                };
+            }
+
+            public static Type FindType(string fullName)
+            {
+                foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type type = assembly.GetType(fullName, false);
+                    if (type != null)
+                    {
+                        return type;
+                    }
+                }
+
+                string[] assemblyNames = new[]
+                {
+                    "Microsoft.VisualStudio.Shell.15.0",
+                    "Microsoft.VisualStudio.Shell.Framework",
+                    "Microsoft.VisualStudio.PlatformUI"
+                };
+
+                foreach (string assemblyName in assemblyNames)
+                {
+                    Type type = Type.GetType(fullName + ", " + assemblyName, false);
+                    if (type != null)
+                    {
+                        return type;
+                    }
+                }
+
+                return Type.GetType(fullName, false);
+            }
+
+            private static MediaColor GetVsColor(string resourceKeyPropertyName, MediaColor fallback)
+            {
+                try
+                {
+                    Type environmentColors = FindType("Microsoft.VisualStudio.PlatformUI.EnvironmentColors");
+                    Type vsColorTheme = FindType("Microsoft.VisualStudio.PlatformUI.VSColorTheme");
+                    if (environmentColors == null || vsColorTheme == null)
+                    {
+                        return fallback;
+                    }
+
+                    PropertyInfo property = environmentColors.GetProperty(resourceKeyPropertyName, BindingFlags.Static | BindingFlags.Public);
+                    if (property == null)
+                    {
+                        return fallback;
+                    }
+
+                    object key = property.GetValue(null, null);
+                    if (key == null)
+                    {
+                        return fallback;
+                    }
+
+                    MethodInfo method = vsColorTheme.GetMethods(BindingFlags.Static | BindingFlags.Public)
+                        .FirstOrDefault(m => m.Name == "GetThemedColor"
+                            && m.GetParameters().Length == 1
+                            && m.GetParameters()[0].ParameterType.IsInstanceOfType(key));
+                    if (method == null)
+                    {
+                        return fallback;
+                    }
+
+                    object value = method.Invoke(null, new[] { key });
+                    if (value is DrawingColor)
+                    {
+                        DrawingColor drawingColor = (DrawingColor)value;
+                        return MediaColor.FromArgb(drawingColor.A, drawingColor.R, drawingColor.G, drawingColor.B);
+                    }
+
+                    if (value is MediaColor)
+                    {
+                        return (MediaColor)value;
+                    }
+                }
+                catch
+                {
+                    // Fall back to the built-in Visual Studio-like dark/light palette.
+                }
+
+                return fallback;
+            }
+
+            private static MediaColor FromRgb(byte red, byte green, byte blue)
+            {
+                return MediaColor.FromRgb(red, green, blue);
+            }
+
+            private static bool IsDark(MediaColor color)
+            {
+                double luminance = (0.299 * color.R + 0.587 * color.G + 0.114 * color.B) / 255.0;
+                return luminance < 0.5;
+            }
+        }
+
+        private void Border_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            SelectCompanion(null, fromList: false);
         }
     }
 }

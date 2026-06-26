@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable"
+              xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h" />
+  <Extern href="vsshlids.h" />
+
+  <Commands package="guidVisualStudioPokemonPackage">
+    <Groups>
+      <Group guid="guidVisualStudioPokemonPackageCmdSet"
+             id="PokemonMenuGroup"
+             priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <Button guid="guidVisualStudioPokemonPackageCmdSet"
+              id="cmdidStart"
+              priority="0x0100"
+              type="Button">
+        <Parent guid="guidVisualStudioPokemonPackageCmdSet" id="PokemonMenuGroup" />
+        <Strings>
+          <ButtonText>Start Pokemon Coding Session</ButtonText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidVisualStudioPokemonPackageCmdSet"
+              id="cmdidSpawnSelected"
+              priority="0x0101"
+              type="Button">
+        <Parent guid="guidVisualStudioPokemonPackageCmdSet" id="PokemonMenuGroup" />
+        <Strings>
+          <ButtonText>Spawn Selected Pokemon</ButtonText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidVisualStudioPokemonPackageCmdSet"
+              id="cmdidSpawnRandom"
+              priority="0x0102"
+              type="Button">
+        <Parent guid="guidVisualStudioPokemonPackageCmdSet" id="PokemonMenuGroup" />
+        <Strings>
+          <ButtonText>Spawn Random Pokemon</ButtonText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidVisualStudioPokemonPackageCmdSet"
+              id="cmdidRemoveAll"
+              priority="0x0103"
+              type="Button">
+        <Parent guid="guidVisualStudioPokemonPackageCmdSet" id="PokemonMenuGroup" />
+        <Strings>
+          <ButtonText>Remove All Pokemon</ButtonText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidVisualStudioPokemonPackageCmdSet"
+              id="cmdidRollCall"
+              priority="0x0104"
+              type="Button">
+        <Parent guid="guidVisualStudioPokemonPackageCmdSet" id="PokemonMenuGroup" />
+        <Strings>
+          <ButtonText>Pokemon Roll-call</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="guidVisualStudioPokemonPackage"
+                value="{b6608e4b-4dc4-4aa7-b2ad-f64213d2242e}" />
+
+    <GuidSymbol name="guidVisualStudioPokemonPackageCmdSet"
+                value="{1b1d9d25-cd9a-43e2-a4fd-646d0c9f8dbe}">
+      <IDSymbol name="PokemonMenuGroup" value="0x1020" />
+      <IDSymbol name="cmdidStart" value="0x0100" />
+      <IDSymbol name="cmdidSpawnSelected" value="0x0101" />
+      <IDSymbol name="cmdidSpawnRandom" value="0x0102" />
+      <IDSymbol name="cmdidRemoveAll" value="0x0103" />
+      <IDSymbol name="cmdidRollCall" value="0x0104" />
+    </GuidSymbol>
+  </Symbols>
+
+</CommandTable>

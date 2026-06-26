@@ -1,0 +1,36 @@
+<UserControl x:Class="VisualStudioPokemon.UI.PokemonControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="380"
+             d:DesignWidth="640">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Padding="8" Background="#F5F5F5" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Visual Studio Pokemon" Margin="0,0,12,0" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <ComboBox x:Name="SpeciesCombo" Width="150" Margin="0,0,6,0" DisplayMemberPath="DisplayName" />
+                    <TextBox x:Name="NameBox" Width="110" Margin="0,0,6,0" ToolTip="Nickname. Leave blank for a random name." />
+                    <ComboBox x:Name="SizeCombo" Width="90" Margin="0,0,6,0" />
+                    <CheckBox x:Name="ShinyCheck" Content="Shiny" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <Button Content="Spawn" Margin="0,0,6,0" Padding="10,3" Click="SpawnButton_Click" />
+                    <Button Content="Random" Margin="0,0,6,0" Padding="10,3" Click="RandomButton_Click" />
+                    <Button Content="Remove all" Margin="0,0,6,0" Padding="10,3" Click="RemoveAllButton_Click" />
+                    <Button Content="Roll-call" Padding="10,3" Click="RollCallButton_Click" />
+                </StackPanel>
+                <TextBlock x:Name="StatusText" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#666666" />
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1" Background="#1E1E1E">
+            <Canvas x:Name="Playground" ClipToBounds="True" SizeChanged="Playground_SizeChanged" />
+        </Border>
+    </Grid>
+</UserControl>

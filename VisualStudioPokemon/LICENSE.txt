@@ -1,0 +1,13 @@
+Visual Studio Pokemon conversion scaffold
+
+Copyright 2026.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this generated scaffold and associated documentation files to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the scaffold, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the scaffold.
+
+THE SCAFFOLD IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+Third-party notice:
+This project is an unofficial Visual Studio reimplementation inspired by https://github.com/jakobhoeg/vscode-pokemon.
+It does not include original Pokemon sprite images. Pokemon, Pokemon character names, and related marks are owned by their respective rights holders. If you choose to import sprite assets from another project, verify that you have the right to use and redistribute those files.

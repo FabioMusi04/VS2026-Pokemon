@@ -69,8 +69,8 @@ namespace VisualStudioPokemon.Services
             }
 
             IReadOnlyList<PokemonSpecies> loaded = byKey.Values
-                .OrderBy(x => x.Generation)
-                .ThenBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(x => x.Generation)
                 .ToList();
 
             if (loaded.Count > 0)

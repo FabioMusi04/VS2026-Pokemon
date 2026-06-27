@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
@@ -17,10 +17,11 @@
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.5.40034" />
   </ItemGroup>
-  <ItemGroup>
-	  <Content Include="LICENSE.txt" IncludeInVSIX="true" />
-	  <Content Include="Resources\**\*.*" IncludeInVSIX="true" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+	<ItemGroup>
+		<Content Include="../LICENSE.txt" IncludeInVSIX="true" />
+		<Content Include="../README.md" IncludeInVSIX="true" />
+		<Content Include="Resources\**\*.*" IncludeInVSIX="true" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
 	<ItemGroup>
 		<Reference Include="System.Design" />
 		<Reference Include="System.Drawing" />

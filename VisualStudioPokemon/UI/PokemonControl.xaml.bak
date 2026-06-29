@@ -128,96 +128,11 @@
             </Setter>
         </Style>
 
-        <!-- ToggleButton used inside the ComboBox template drop-down arrow -->
-        <Style x:Key="Pokemon.ComboBoxToggleButtonStyle" TargetType="ToggleButton">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Root"
-                                Background="{DynamicResource Pokemon.ControlBackgroundBrush}"
-                                BorderBrush="{DynamicResource Pokemon.ControlBorderBrush}"
-                                BorderThickness="1">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="20" />
-                                </Grid.ColumnDefinitions>
-                                <!-- Transparent left side that passes clicks through to the ContentSite -->
-                                <Border Grid.Column="0" Background="Transparent" />
-                                <!-- Arrow area -->
-                                <Border Grid.Column="1"
-                                        x:Name="ArrowBorder"
-                                        Background="Transparent"
-                                        BorderBrush="{DynamicResource Pokemon.ControlBorderBrush}"
-                                        BorderThickness="1,0,0,0">
-                                    <Path x:Name="Arrow"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"
-                                          Data="M 0 0 L 4 4 L 8 0 Z"
-                                          Fill="{DynamicResource Pokemon.TextBrush}" />
-                                </Border>
-                            </Grid>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Pokemon.AccentBrush}" />
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Root" Property="Opacity" Value="0.65" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Full ControlTemplate for non-editable ComboBox - gives us 100% control of selection text color -->
-        <ControlTemplate x:Key="Pokemon.NonEditableComboBoxTemplate" TargetType="{x:Type ComboBox}">
-            <Grid>
-                <ToggleButton x:Name="ToggleButton"
-                              Style="{StaticResource Pokemon.ComboBoxToggleButtonStyle}"
-                              Focusable="False"
-                              IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
-                              ClickMode="Press" />
-                <!-- Selection box: shows the selected value with explicit foreground -->
-                <ContentPresenter x:Name="ContentSite"
-                                  IsHitTestVisible="False"
-                                  Content="{TemplateBinding SelectionBoxItem}"
-                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                  ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
-                                  Margin="6,3,26,3"
-                                  VerticalAlignment="Center"
-                                  HorizontalAlignment="Left"
-                                  TextElement.Foreground="{DynamicResource Pokemon.TextBrush}" />
-                <Popup x:Name="PART_Popup"
-                       Placement="Bottom"
-                       IsOpen="{TemplateBinding IsDropDownOpen}"
-                       AllowsTransparency="True"
-                       Focusable="False"
-                       PopupAnimation="Slide">
-                    <Grid x:Name="DropDown"
-                          SnapsToDevicePixels="True"
-                          MinWidth="{TemplateBinding ActualWidth}"
-                          MaxHeight="{TemplateBinding MaxDropDownHeight}">
-                        <Border x:Name="DropDownBorder"
-                                Background="{DynamicResource Pokemon.ControlBackgroundBrush}"
-                                BorderBrush="{DynamicResource Pokemon.ControlBorderBrush}"
-                                BorderThickness="1">
-                            <ScrollViewer SnapsToDevicePixels="True">
-                                <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" />
-                            </ScrollViewer>
-                        </Border>
-                    </Grid>
-                </Popup>
-            </Grid>
-            <ControlTemplate.Triggers>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.65" />
-                </Trigger>
-            </ControlTemplate.Triggers>
-        </ControlTemplate>
-
         <Style TargetType="ComboBox">
+            <Style.Resources>
+                <Style TargetType="{x:Type TextBox}" BasedOn="{StaticResource Pokemon.ComboBoxEditableTextBoxStyle}" />
+            </Style.Resources>
+
             <Setter Property="Background" Value="{DynamicResource Pokemon.ControlBackgroundBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
             <Setter Property="TextElement.Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
@@ -226,98 +141,6 @@
             <Setter Property="Padding" Value="3" />
             <Setter Property="MinHeight" Value="24" />
             <Setter Property="ItemContainerStyle" Value="{StaticResource Pokemon.ComboBoxItemStyle}" />
-            <Setter Property="Template" Value="{StaticResource Pokemon.NonEditableComboBoxTemplate}" />
-        </Style>
-
-        <!-- ToggleButton used inside the EDITABLE ComboBox template (arrow-only, no outer border — the TextBox provides it) -->
-        <Style x:Key="Pokemon.EditableComboBoxToggleButtonStyle" TargetType="ToggleButton">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Root" Background="Transparent" BorderThickness="0">
-                            <Border x:Name="ArrowBorder"
-                                    Width="20"
-                                    Background="Transparent"
-                                    BorderBrush="{DynamicResource Pokemon.ControlBorderBrush}"
-                                    BorderThickness="1,0,0,0"
-                                    HorizontalAlignment="Right">
-                                <Path x:Name="Arrow"
-                                      HorizontalAlignment="Center"
-                                      VerticalAlignment="Center"
-                                      Data="M 0 0 L 4 4 L 8 0 Z"
-                                      Fill="{DynamicResource Pokemon.TextBrush}" />
-                            </Border>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Root" Property="Opacity" Value="0.65" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Full ControlTemplate for editable ComboBox (SpeciesCombo) -->
-        <ControlTemplate x:Key="Pokemon.EditableComboBoxTemplate" TargetType="{x:Type ComboBox}">
-            <Border x:Name="OuterBorder"
-                    Background="{DynamicResource Pokemon.ComboBoxEditableBackgroundBrush}"
-                    BorderBrush="{DynamicResource Pokemon.ControlBorderBrush}"
-                    BorderThickness="1">
-                <Grid>
-                    <!-- The editable TextBox — WPF requires the name PART_EditableTextBox -->
-                    <TextBox x:Name="PART_EditableTextBox"
-                             Style="{StaticResource Pokemon.ComboBoxEditableTextBoxStyle}"
-                             Margin="0,0,20,0"
-                             IsReadOnly="{TemplateBinding IsReadOnly}" />
-                    <!-- Arrow toggle button overlaid on the right -->
-                    <ToggleButton Style="{StaticResource Pokemon.EditableComboBoxToggleButtonStyle}"
-                                  Focusable="False"
-                                  IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
-                                  ClickMode="Press" />
-                    <!-- Drop-down popup — WPF requires the name PART_Popup -->
-                    <Popup x:Name="PART_Popup"
-                           Placement="Bottom"
-                           IsOpen="{TemplateBinding IsDropDownOpen}"
-                           AllowsTransparency="True"
-                           Focusable="False"
-                           PopupAnimation="Slide">
-                        <Grid SnapsToDevicePixels="True"
-                              MinWidth="{TemplateBinding ActualWidth}"
-                              MaxHeight="{TemplateBinding MaxDropDownHeight}">
-                            <Border Background="{DynamicResource Pokemon.ControlBackgroundBrush}"
-                                    BorderBrush="{DynamicResource Pokemon.ControlBorderBrush}"
-                                    BorderThickness="1">
-                                <ScrollViewer SnapsToDevicePixels="True">
-                                    <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" />
-                                </ScrollViewer>
-                            </Border>
-                        </Grid>
-                    </Popup>
-                </Grid>
-            </Border>
-            <ControlTemplate.Triggers>
-                <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                    <Setter TargetName="OuterBorder" Property="BorderBrush" Value="{DynamicResource Pokemon.AccentBrush}" />
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.65" />
-                </Trigger>
-            </ControlTemplate.Triggers>
-        </ControlTemplate>
-
-        <!-- Style applied ONLY to editable ComboBoxes (SpeciesCombo) -->
-        <Style x:Key="Pokemon.EditableComboBoxStyle" TargetType="ComboBox">
-            <Setter Property="Background" Value="{DynamicResource Pokemon.ControlBackgroundBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
-            <Setter Property="TextElement.Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Pokemon.ControlBorderBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="3" />
-            <Setter Property="MinHeight" Value="24" />
-            <Setter Property="IsEditable" Value="True" />
-            <Setter Property="ItemContainerStyle" Value="{StaticResource Pokemon.ComboBoxItemStyle}" />
-            <Setter Property="Template" Value="{StaticResource Pokemon.EditableComboBoxTemplate}" />
         </Style>
 
         <Style x:Key="Pokemon.ListBoxItemStyle" TargetType="ListBoxItem">
@@ -411,7 +234,6 @@
 
                         <TextBlock Text="Species" Style="{StaticResource Pokemon.CaptionStyle}" Margin="0,0,0,3" />
                         <ComboBox x:Name="SpeciesCombo"
-                                  Style="{StaticResource Pokemon.EditableComboBoxStyle}"
                                   DisplayMemberPath="DisplayName"
                                   IsEditable="True"
                                   IsTextSearchEnabled="True"

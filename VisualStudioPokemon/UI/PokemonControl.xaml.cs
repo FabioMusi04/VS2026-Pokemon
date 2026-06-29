@@ -100,9 +100,10 @@ namespace VisualStudioPokemon.UI
         {
             EnsureRestored();
 
-            foreach (Companion companion in companions)
+            foreach (Companion companion in companions.ToList())
             {
                 companion.SpeechTimer.Stop();
+                PlayPokeballAt(companion.X + companion.Visual.Width / 2, companion.BaseY + companion.Visual.Height / 2, null, 48);
             }
 
             selectedCompanion = null;
@@ -148,6 +149,7 @@ namespace VisualStudioPokemon.UI
             EnsureRestored();
             UpdateSelectionUi();
             UpdateStatus();
+            Dispatcher.BeginInvoke(new Action(PlayWindowOpenAnimation), DispatcherPriority.Loaded);
         }
 
         private void PokemonControl_Unloaded(object sender, RoutedEventArgs e)
@@ -309,6 +311,7 @@ namespace VisualStudioPokemon.UI
             companion.BaseY = GetRandomBaseY(companion);
             companion.X = FindOpenTarget(companion, MovementMinX(companion), MovementMaxX(companion), preferFarAway: false);
             companion.TargetX = companion.X;
+            companion.TargetY = companion.BaseY;
 
             root.Cursor = Cursors.Hand;
             root.MouseLeftButtonDown += delegate (object clickSender, MouseButtonEventArgs args)
@@ -334,11 +337,13 @@ namespace VisualStudioPokemon.UI
             contextMenu.Items.Add(removeThisMenuItem);
             root.ContextMenu = contextMenu;
 
+            root.Opacity = 0;
             Playground.Children.Add(root);
             companions.Add(companion);
             SetState(companion, PokemonAnimationState.Idle);
             ClampToPlayground(companion);
             Position(companion, 0);
+            PlayPokeballAt(companion.X + width / 2, companion.BaseY + height / 2, delegate { root.Opacity = 1; }, 54);
 
             if (save)
             {
@@ -460,47 +465,53 @@ namespace VisualStudioPokemon.UI
         {
             double minX = MovementMinX(companion);
             double maxX = MovementMaxX(companion);
-            if (maxX <= minX)
+            double minY = MovementMinY(companion);
+            double maxY = MovementMaxY(companion);
+            if (maxX <= minX && maxY <= minY)
             {
                 companion.X = minX;
+                companion.BaseY = minY;
                 SetState(companion, PokemonAnimationState.Idle);
                 return;
             }
 
-            double target = FindOpenTarget(companion, minX, maxX, preferFarAway: true);
-            target = Math.Max(minX, Math.Min(maxX, target));
+            double targetX = Math.Max(minX, Math.Min(maxX, FindOpenTarget(companion, minX, maxX, preferFarAway: true)));
+            double targetY = minY + random.NextDouble() * Math.Max(1, maxY - minY);
 
-            if (Math.Abs(target - companion.X) < 3)
+            if (Math.Abs(targetX - companion.X) < 3 && Math.Abs(targetY - companion.BaseY) < 3)
             {
                 companion.HoldFrames = random.Next(45, 120);
                 companion.FramesInState = 0;
                 return;
             }
 
-            companion.TargetX = target;
-            SetState(companion, target < companion.X ? PokemonAnimationState.WalkLeft : PokemonAnimationState.WalkRight);
+            companion.TargetX = targetX;
+            companion.TargetY = targetY;
+            SetState(companion, targetX < companion.X ? PokemonAnimationState.WalkLeft : PokemonAnimationState.WalkRight);
         }
 
         private void StepTowardTarget(Companion companion)
         {
             double minX = MovementMinX(companion);
             double maxX = MovementMaxX(companion);
+            double minY = MovementMinY(companion);
+            double maxY = MovementMaxY(companion);
             companion.TargetX = Math.Max(minX, Math.Min(maxX, companion.TargetX));
+            companion.TargetY = Math.Max(minY, Math.Min(maxY, companion.TargetY));
 
-            double delta = companion.TargetX - companion.X;
-            if (Math.Abs(delta) <= companion.Speed)
+            double deltaX = companion.TargetX - companion.X;
+            double deltaY = companion.TargetY - companion.BaseY;
+            double distance = Math.Sqrt(deltaX * deltaX + deltaY * deltaY);
+            if (distance <= companion.Speed)
             {
                 companion.X = companion.TargetX;
+                companion.BaseY = companion.TargetY;
                 SetState(companion, PokemonAnimationState.Idle);
                 return;
             }
 
-            companion.X += Math.Sign(delta) * companion.Speed;
-            if (companion.X <= minX || companion.X >= maxX)
-            {
-                companion.X = Math.Max(minX, Math.Min(maxX, companion.X));
-                SetState(companion, PokemonAnimationState.Idle);
-            }
+            companion.X += deltaX / distance * companion.Speed;
+            companion.BaseY += deltaY / distance * companion.Speed;
         }
 
         private double FindOpenTarget(Companion companion, double minX, double maxX, bool preferFarAway)
@@ -747,6 +758,21 @@ namespace VisualStudioPokemon.UI
             return Math.Max(PlaygroundPadding, Playground.ActualWidth - PlaygroundPadding - companion.Visual.Width);
         }
 
+        private double MovementMinY(Companion companion)
+        {
+            return PlaygroundPadding;
+        }
+
+        private double MovementMaxY(Companion companion)
+        {
+            if (Playground.ActualHeight <= 1)
+            {
+                return PlaygroundPadding;
+            }
+
+            return Math.Max(PlaygroundPadding, Playground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
+        }
+
         private void SelectCompanion(Companion companion, bool fromList)
         {
             _ = fromList;
@@ -782,7 +808,8 @@ namespace VisualStudioPokemon.UI
         private void RemoveCompanion(Companion companion)
         {
             companion.SpeechTimer.Stop();
-            Playground.Children.Remove(companion.Visual);
+            companion.Visual.Opacity = 0;
+            PlayPokeballAt(companion.X + companion.Visual.Width / 2, companion.BaseY + companion.Visual.Height / 2, delegate { Playground.Children.Remove(companion.Visual); }, 48);
             companions.Remove(companion);
 
             if (ReferenceEquals(selectedCompanion, companion))
@@ -1174,6 +1201,7 @@ namespace VisualStudioPokemon.UI
             internal int Lane { get; set; }
             internal double X { get; set; }
             internal double TargetX { get; set; }
+            internal double TargetY { get; set; }
             internal double BaseY { get; set; }
             internal double Speed { get; set; }
             internal double Phase { get; set; }
@@ -1323,6 +1351,42 @@ namespace VisualStudioPokemon.UI
                 double luminance = (0.299 * color.R + 0.587 * color.G + 0.114 * color.B) / 255.0;
                 return luminance < 0.5;
             }
+        }
+
+
+        private void PlayWindowOpenAnimation()
+        {
+            if (Playground.ActualWidth <= 1 || Playground.ActualHeight <= 1)
+            {
+                return;
+            }
+
+            PlayPokeballAt(Playground.ActualWidth / 2, Playground.ActualHeight / 2, null, 64);
+        }
+
+        private void PlayPokeballAt(double centerX, double centerY, Action completed, double size)
+        {
+            string path = PokemonResourceLocator.GetResourcePath("pokeball_sprite_sheet.png");
+            var animation = new PokeballAnimationImage
+            {
+                Width = size,
+                Height = size,
+                Opacity = 0.95
+            };
+
+            Canvas.SetLeft(animation, Math.Max(0, centerX - size / 2));
+            Canvas.SetTop(animation, Math.Max(0, centerY - size / 2));
+            Panel.SetZIndex(animation, 5000);
+            PokeballLayer.Children.Add(animation);
+            animation.Completed += delegate
+            {
+                PokeballLayer.Children.Remove(animation);
+                if (completed != null)
+                {
+                    completed();
+                }
+            };
+            animation.Play(path);
         }
 
         private void Border_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

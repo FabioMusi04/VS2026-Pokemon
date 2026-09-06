@@ -333,6 +333,11 @@ namespace VisualStudioPokemon.UI
                 Background = GetBrushResource("Pokemon.ControlBackgroundBrush", Brushes.DimGray)
             };
 
+            removeThisMenuItem.Click += delegate
+            {
+                RemoveCompanion(companion);
+            };
+
             var contextMenu = new ContextMenu
             {
                 Background = GetBrushResource("Pokemon.ControlBackgroundBrush", Brushes.DimGray),
@@ -605,75 +610,10 @@ namespace VisualStudioPokemon.UI
             return minY + random.NextDouble() * Math.Max(1, maxY - minY);
         }
 
-        private int ChooseLeastBusyLane()
-        {
-            int laneCount = GetAvailableLaneCount();
-            if (laneCount <= 1)
-            {
-                return 0;
-            }
-
-            int bestLane = 0;
-            int bestCount = Int32.MaxValue;
-            for (int lane = 0; lane < laneCount; lane++)
-            {
-                int count = companions.Count(c => c.Lane == lane);
-                if (count < bestCount)
-                {
-                    bestCount = count;
-                    bestLane = lane;
-                }
-            }
-
-            return bestLane;
-        }
-
-        private void ReflowCompanionLanes()
-        {
-            if (companions.Count == 0)
-            {
-                return;
-            }
-
-            int laneCount = GetAvailableLaneCount();
-            for (int i = 0; i < companions.Count; i++)
-            {
-                Companion companion = companions[i];
-                if (companion.Lane < 0 || companion.Lane >= laneCount)
-                {
-                    companion.Lane = i % laneCount;
-                }
-
-                companion.BaseY = GetBaseYForLane(companion);
-                ClampToPlayground(companion);
-            }
-        }
-
-        private int GetAvailableLaneCount()
-        {
-            if (Playground.ActualHeight <= 1)
-            {
-                return 1;
-            }
-
-            return Math.Max(1, (int)Math.Floor((Playground.ActualHeight - PlaygroundPadding * 2) / GetLaneHeight()));
-        }
-
         private double GetLaneHeight()
         {
             double tallest = companions.Count == 0 ? 98 : companions.Max(c => c.Visual.Height);
             return Math.Max(64, tallest + 18);
-        }
-
-        private double GetBaseYForLane(Companion companion)
-        {
-            if (Playground.ActualHeight <= 1)
-            {
-                return PlaygroundPadding;
-            }
-
-            double y = Playground.ActualHeight - PlaygroundPadding - companion.Visual.Height - companion.Lane * GetLaneHeight();
-            return Math.Max(PlaygroundPadding, y);
         }
 
         private double MovementMinX()

@@ -11,15 +11,16 @@ Bring Pokémon to Visual Studio! Add an animated Pokémon companion to your IDE 
 
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=FabioMusitelli.74DF41DFEB5C4F398314F5D1C961F363">
-    <img src="https://img.shields.io/visual-studio-marketplace/v/FabioMusitelli.74DF41DFEB5C4F398314F5D1C961F363?label=Marketplace" alt="Visual Studio Marketplace Version">
+    <img src="https://vsmarketplacebadges.dev/version-short/FabioMusitelli.74DF41DFEB5C4F398314F5D1C961F363.png" alt="Marketplace Version">
   </a>
   <a href="https://marketplace.visualstudio.com/items?itemName=FabioMusitelli.74DF41DFEB5C4F398314F5D1C961F363">
-    <img src="https://img.shields.io/visual-studio-marketplace/i/FabioMusitelli.74DF41DFEB5C4F398314F5D1C961F363?label=Installs" alt="Visual Studio Marketplace Installs">
+    <img src="https://vsmarketplacebadges.dev/installs-short/FabioMusitelli.74DF41DFEB5C4F398314F5D1C961F363.png" alt="Marketplace Installs">
   </a>
-  <a href="./LICENSE.txt">
-    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
+  <a href="https://marketplace.visualstudio.com/items?itemName=FabioMusitelli.74DF41DFEB5C4F398314F5D1C961F363">
+    <img src="https://vsmarketplacebadges.dev/downloads-short/FabioMusitelli.74DF41DFEB5C4F398314F5D1C961F363.png" alt="Marketplace Downloads">
   </a>
 </p>
+
 
 ---
 

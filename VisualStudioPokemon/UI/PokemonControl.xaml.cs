@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -25,16 +25,16 @@ namespace VisualStudioPokemon.UI
         private const double PlaygroundPadding = 12;
         private const double MinimumCompanionGap = 8;
 
-        private readonly Random random = new Random();
+        private readonly Random random = new();
         private readonly DispatcherTimer animationTimer;
-        private readonly PokemonSessionStore store = new PokemonSessionStore();
-        private readonly ObservableCollection<Companion> companions = new ObservableCollection<Companion>();
+        private readonly PokemonSessionStore store = new();
+        private readonly ObservableCollection<Companion> companions = [];
         private readonly ICollectionView speciesView;
         private bool restored;
         private bool suppressSpeciesFilter;
         private bool suppressCompanionSelection;
-        private Companion selectedCompanion;
-        private Delegate vsThemeChangedHandler;
+        private Companion? selectedCompanion;
+        private Delegate? vsThemeChangedHandler;
 
         public PokemonControl()
         {
@@ -80,7 +80,7 @@ namespace VisualStudioPokemon.UI
             EnsureRestored();
             PokemonSpecies species = ResolveSpeciesFromCombo();
             string nickname = String.IsNullOrWhiteSpace(NameBox.Text) ? species.DisplayName : NameBox.Text.Trim();
-            var size = SizeCombo.SelectedItem is PokemonSize ? (PokemonSize)SizeCombo.SelectedItem : PokemonSize.Medium;
+            var size = SizeCombo.SelectedItem is PokemonSize defaultSize ? defaultSize : PokemonSize.Medium;
             SpawnPokemon(new PokemonSpec(species.Key, species.DisplayName, nickname, size, ShinyCheck.IsChecked == true));
             NameBox.Text = String.Empty;
             ResetSpeciesFilter(species);
@@ -90,7 +90,7 @@ namespace VisualStudioPokemon.UI
         {
             EnsureRestored();
             PokemonSpecies species = PokemonCatalog.GetRandomSpecies();
-            var size = SizeCombo.SelectedItem is PokemonSize ? (PokemonSize)SizeCombo.SelectedItem : PokemonSize.Medium;
+            var size = SizeCombo.SelectedItem is PokemonSize defaultSize ? defaultSize : PokemonSize.Medium;
             bool shiny = ShinyCheck.IsChecked == true || random.Next(8192) == 0;
             SpawnPokemon(new PokemonSpec(species.Key, species.DisplayName, species.DisplayName, size, shiny));
             ResetSpeciesFilter(species);
@@ -110,7 +110,7 @@ namespace VisualStudioPokemon.UI
             companions.Clear();
             Playground.Children.Clear();
             SyncCompanionSelectors();
-            store.Save(Enumerable.Empty<PokemonSpec>());
+            store.Save([]);
             UpdateSelectionUi();
             UpdateStatus();
         }
@@ -179,8 +179,7 @@ namespace VisualStudioPokemon.UI
 
         private void RemoveCompanionItemButton_Click(object sender, RoutedEventArgs e)
         {
-            FrameworkElement element = sender as FrameworkElement;
-            Companion companion = element != null ? element.Tag as Companion : null;
+            Companion? companion = sender is FrameworkElement element ? element.Tag as Companion : null;
             if (companion == null)
             {
                 return;
@@ -203,7 +202,7 @@ namespace VisualStudioPokemon.UI
                 return;
             }
 
-            SelectCompanion(SpawnedCombo.SelectedItem as Companion, fromList: true);
+            SelectCompanion((Companion)SpawnedCombo.SelectedItem, fromList: true);
         }
 
         private void SpeciesCombo_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -278,7 +277,7 @@ namespace VisualStudioPokemon.UI
             var label = new TextBlock
             {
                 Text = spec.Nickname,
-                Foreground = Brushes.White,
+                Foreground = GetBrushResource("Pokemon.TextBrush", Brushes.White),
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold,
                 TextAlignment = TextAlignment.Center,
@@ -300,7 +299,7 @@ namespace VisualStudioPokemon.UI
             Panel.SetZIndex(selectionRing, 10);
             root.Children.Add(selectionRing);
 
-            var companion = new Companion(spec, root, sprite as IPokemonSpriteView, speechBubble, selectionRing)
+            var companion = new Companion(spec, root, (IPokemonSpriteView)sprite, speechBubble, selectionRing, label)
             {
                 Lane = 0,
                 Speed = random.NextDouble() * 0.8 + 0.5,
@@ -309,7 +308,7 @@ namespace VisualStudioPokemon.UI
             };
 
             companion.BaseY = GetRandomBaseY(companion);
-            companion.X = FindOpenTarget(companion, MovementMinX(companion), MovementMaxX(companion), preferFarAway: false);
+            companion.X = FindOpenTarget(companion, MovementMinX(), MovementMaxX(companion), preferFarAway: false);
             companion.TargetX = companion.X;
             companion.TargetY = companion.BaseY;
 
@@ -327,13 +326,19 @@ namespace VisualStudioPokemon.UI
                 args.Handled = true;
             };
 
-            var removeThisMenuItem = new MenuItem { Header = "Remove this Pokemon" };
-            removeThisMenuItem.Click += delegate
+            var removeThisMenuItem = new MenuItem
             {
-                SelectCompanion(companion, fromList: false);
-                RemoveCompanion(companion);
+                Header = "Remove this Pokemon",
+                Foreground = GetBrushResource("Pokemon.TextBrush", Brushes.White),
+                Background = GetBrushResource("Pokemon.ControlBackgroundBrush", Brushes.DimGray)
             };
-            var contextMenu = new ContextMenu();
+
+            var contextMenu = new ContextMenu
+            {
+                Background = GetBrushResource("Pokemon.ControlBackgroundBrush", Brushes.DimGray),
+                Foreground = GetBrushResource("Pokemon.TextBrush", Brushes.White)
+            };
+
             contextMenu.Items.Add(removeThisMenuItem);
             root.ContextMenu = contextMenu;
 
@@ -357,8 +362,7 @@ namespace VisualStudioPokemon.UI
         {
             Brush accentBrush = GetBrushResource("Pokemon.AccentBrush", Brushes.DeepSkyBlue);
             MediaColor accentColor = Colors.DodgerBlue;
-            SolidColorBrush solidAccent = accentBrush as SolidColorBrush;
-            if (solidAccent != null)
+            if (accentBrush is SolidColorBrush solidAccent)
             {
                 accentColor = solidAccent.Color;
             }
@@ -378,7 +382,7 @@ namespace VisualStudioPokemon.UI
                 {
                     Text = "SELECTED",
                     Background = accentBrush,
-                    Foreground = Brushes.White,
+                    Foreground = EnsureReadableBrush(Brushes.White, accentBrush),
                     FontSize = 9,
                     FontWeight = FontWeights.Bold,
                     Padding = new Thickness(5, 1, 5, 1),
@@ -463,9 +467,9 @@ namespace VisualStudioPokemon.UI
 
         private void BeginWalk(Companion companion)
         {
-            double minX = MovementMinX(companion);
+            double minX = MovementMinX();
             double maxX = MovementMaxX(companion);
-            double minY = MovementMinY(companion);
+            double minY = MovementMinY();
             double maxY = MovementMaxY(companion);
             if (maxX <= minX && maxY <= minY)
             {
@@ -492,9 +496,9 @@ namespace VisualStudioPokemon.UI
 
         private void StepTowardTarget(Companion companion)
         {
-            double minX = MovementMinX(companion);
+            double minX = MovementMinX();
             double maxX = MovementMaxX(companion);
-            double minY = MovementMinY(companion);
+            double minY = MovementMinY();
             double maxY = MovementMaxY(companion);
             companion.TargetX = Math.Max(minX, Math.Min(maxX, companion.TargetX));
             companion.TargetY = Math.Max(minY, Math.Min(maxY, companion.TargetY));
@@ -538,74 +542,6 @@ namespace VisualStudioPokemon.UI
             return fallback;
         }
 
-        private bool WouldOverlapAtTarget(Companion companion, double candidateX)
-        {
-            foreach (Companion other in companions)
-            {
-                if (ReferenceEquals(other, companion) || other.Lane != companion.Lane)
-                {
-                    continue;
-                }
-
-                double left = candidateX - MinimumCompanionGap;
-                double right = candidateX + companion.Visual.Width + MinimumCompanionGap;
-                double otherLeft = other.X;
-                double otherRight = other.X + other.Visual.Width;
-
-                if (left < otherRight && right > otherLeft)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private void ResolveHorizontalSpacing()
-        {
-            if (companions.Count <= 1 || Playground.ActualWidth <= 1)
-            {
-                return;
-            }
-
-            foreach (IGrouping<int, Companion> lane in companions.GroupBy(c => c.Lane))
-            {
-                List<Companion> ordered = lane.OrderBy(c => c.X).ToList();
-                double nextLeft = PlaygroundPadding;
-
-                foreach (Companion companion in ordered)
-                {
-                    double maxX = MovementMaxX(companion);
-                    companion.X = Math.Max(MovementMinX(companion), Math.Min(maxX, companion.X));
-                    if (companion.X < nextLeft)
-                    {
-                        companion.X = Math.Min(maxX, nextLeft);
-                    }
-
-                    nextLeft = companion.X + companion.Visual.Width + MinimumCompanionGap;
-                }
-
-                if (ordered.Count == 0)
-                {
-                    continue;
-                }
-
-                Companion last = ordered[ordered.Count - 1];
-                double overflow = last.X + last.Visual.Width + PlaygroundPadding - Playground.ActualWidth;
-                if (overflow > 0)
-                {
-                    for (int i = ordered.Count - 1; i >= 0; i--)
-                    {
-                        Companion companion = ordered[i];
-                        companion.X = Math.Max(MovementMinX(companion), companion.X - overflow);
-                        overflow = i > 0
-                            ? Math.Max(0, ordered[i - 1].X + ordered[i - 1].Visual.Width + MinimumCompanionGap - companion.X)
-                            : 0;
-                    }
-                }
-            }
-        }
-
         private void Swipe(Companion companion)
         {
             SetState(companion, PokemonAnimationState.Swipe);
@@ -617,10 +553,7 @@ namespace VisualStudioPokemon.UI
             companion.State = state;
             companion.FramesInState = 0;
             companion.HoldFrames = state == PokemonAnimationState.Idle ? random.Next(55, 140) : companion.HoldFrames;
-            if (companion.Sprite != null)
-            {
-                companion.Sprite.SetAnimation(state);
-            }
+            companion.Sprite?.SetAnimation(state);
         }
 
         private void ShowSpeechBubble(Companion companion, bool friend)
@@ -651,8 +584,8 @@ namespace VisualStudioPokemon.UI
 
         private void ClampToPlayground(Companion companion)
         {
-            companion.X = Math.Max(MovementMinX(companion), Math.Min(MovementMaxX(companion), companion.X));
-            companion.TargetX = Math.Max(MovementMinX(companion), Math.Min(MovementMaxX(companion), companion.TargetX));
+            companion.X = Math.Max(MovementMinX(), Math.Min(MovementMaxX(companion), companion.X));
+            companion.TargetX = Math.Max(MovementMinX(), Math.Min(MovementMaxX(companion), companion.TargetX));
 
             double maxY = Playground.ActualHeight <= 1
                 ? PlaygroundPadding
@@ -743,7 +676,7 @@ namespace VisualStudioPokemon.UI
             return Math.Max(PlaygroundPadding, y);
         }
 
-        private double MovementMinX(Companion companion)
+        private double MovementMinX()
         {
             return PlaygroundPadding;
         }
@@ -758,7 +691,7 @@ namespace VisualStudioPokemon.UI
             return Math.Max(PlaygroundPadding, Playground.ActualWidth - PlaygroundPadding - companion.Visual.Width);
         }
 
-        private double MovementMinY(Companion companion)
+        private double MovementMinY()
         {
             return PlaygroundPadding;
         }
@@ -773,7 +706,7 @@ namespace VisualStudioPokemon.UI
             return Math.Max(PlaygroundPadding, Playground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
         }
 
-        private void SelectCompanion(Companion companion, bool fromList)
+        private void SelectCompanion(Companion? companion, bool fromList)
         {
             _ = fromList;
 
@@ -886,8 +819,7 @@ namespace VisualStudioPokemon.UI
                 }
             }
 
-            var selected = SpeciesCombo.SelectedItem as PokemonSpecies;
-            if (selected != null)
+            if (SpeciesCombo.SelectedItem is PokemonSpecies selected)
             {
                 return selected;
             }
@@ -900,8 +832,14 @@ namespace VisualStudioPokemon.UI
             string normalized = (filter ?? String.Empty).Trim();
             speciesView.Filter = delegate (object item)
             {
-                var species = item as PokemonSpecies;
-                if (species == null || String.IsNullOrWhiteSpace(normalized))
+                if (item is PokemonSpecies species)
+                {
+                    if (species == null || string.IsNullOrWhiteSpace(normalized))
+                    {
+                        return true;
+                    }
+                }
+                else
                 {
                     return true;
                 }
@@ -939,6 +877,16 @@ namespace VisualStudioPokemon.UI
             Resources["Pokemon.ButtonBackgroundBrush"] = CreateFrozenBrush(palette.ButtonBackground);
             Resources["Pokemon.AccentBrush"] = CreateFrozenBrush(palette.Accent);
 
+            // These two used to be static hardcoded dark values in XAML and never followed the
+            // theme. Now they're refreshed here just like every other brush.
+            Resources["Pokemon.ComboBoxEditableBackgroundBrush"] = CreateFrozenBrush(palette.ControlBackground);
+            Resources["Pokemon.ComboBoxEditableTextBrush"] = CreateFrozenBrush(palette.Text);
+
+            // Text drawn on top of the accent color (selected combo item, SELECTED badge) needs to
+            // flip between black/white depending on how light or dark the accent itself is.
+            Brush accentContrastBrush = EnsureReadableBrush(Brushes.White, CreateFrozenBrush(palette.Accent));
+            Resources["Pokemon.AccentContrastBrush"] = accentContrastBrush;
+
             Resources[SystemColors.WindowBrushKey] = CreateFrozenBrush(palette.ControlBackground);
             Resources[SystemColors.WindowTextBrushKey] = CreateFrozenBrush(palette.Text);
             Resources[SystemColors.ControlBrushKey] = CreateFrozenBrush(palette.ControlBackground);
@@ -946,12 +894,20 @@ namespace VisualStudioPokemon.UI
             Resources[SystemColors.InfoBrushKey] = CreateFrozenBrush(palette.ControlBackground);
             Resources[SystemColors.InfoTextBrushKey] = CreateFrozenBrush(palette.Text);
             Resources[SystemColors.HighlightBrushKey] = CreateFrozenBrush(palette.Accent);
-            Resources[SystemColors.HighlightTextBrushKey] = Brushes.White;
+            Resources[SystemColors.HighlightTextBrushKey] = accentContrastBrush;
             Resources[SystemColors.GrayTextBrushKey] = CreateFrozenBrush(palette.MutedText);
 
             foreach (Companion companion in companions)
             {
-                companion.SelectionRing.BorderBrush = GetBrushResource("Pokemon.AccentBrush", Brushes.DeepSkyBlue);
+                Brush accentBrush = GetBrushResource("Pokemon.AccentBrush", Brushes.DeepSkyBlue);
+                companion.SelectionRing.BorderBrush = accentBrush;
+                companion.NicknameLabel.Foreground = GetBrushResource("Pokemon.TextBrush", Brushes.White);
+
+                if (companion.SelectionRing.Child is TextBlock badge)
+                {
+                    badge.Background = accentBrush;
+                    badge.Foreground = EnsureReadableBrush(Brushes.White, accentBrush);
+                }
             }
 
             Dispatcher.BeginInvoke(new Action(RefreshComboBoxVisuals), DispatcherPriority.Loaded);
@@ -995,6 +951,7 @@ namespace VisualStudioPokemon.UI
             Brush backgroundBrush = GetBrushResource("Pokemon.ControlBackgroundBrush", Brushes.DimGray);
             Brush borderBrush = GetBrushResource("Pokemon.ControlBorderBrush", Brushes.Gray);
             Brush accentBrush = GetBrushResource("Pokemon.AccentBrush", Brushes.DeepSkyBlue);
+            Brush accentContrastBrush = GetBrushResource("Pokemon.AccentContrastBrush", Brushes.White);
 
             comboBox.Foreground = textBrush;
             comboBox.Background = backgroundBrush;
@@ -1004,10 +961,10 @@ namespace VisualStudioPokemon.UI
             comboBox.Resources[SystemColors.ControlBrushKey] = backgroundBrush;
             comboBox.Resources[SystemColors.ControlTextBrushKey] = textBrush;
             comboBox.Resources[SystemColors.HighlightBrushKey] = accentBrush;
-            comboBox.Resources[SystemColors.HighlightTextBrushKey] = Brushes.White;
+            comboBox.Resources[SystemColors.HighlightTextBrushKey] = accentContrastBrush;
 
-            TextBox editableTextBox = comboBox.Template.FindName("PART_EditableTextBox", comboBox) as TextBox;
-            if (editableTextBox != null)
+
+            if (comboBox.Template.FindName("PART_EditableTextBox", comboBox) is TextBox editableTextBox)
             {
                 Brush comboEditableTextBrush =
                     GetBrushResource("Pokemon.ComboBoxEditableTextBrush", Brushes.Black);
@@ -1022,8 +979,9 @@ namespace VisualStudioPokemon.UI
                 editableTextBox.SelectionBrush = accentBrush;
             }
 
-            Popup popup = comboBox.Template.FindName("PART_Popup", comboBox) as Popup;
-            Border popupBorder = popup != null ? popup.Child as Border : null;
+            Border? popupBorder = comboBox.Template.FindName("PART_Popup", comboBox) is Popup popup ?
+                popup.Child as Border : null;
+
             if (popupBorder != null)
             {
                 popupBorder.Background = backgroundBrush;
@@ -1043,6 +1001,7 @@ namespace VisualStudioPokemon.UI
             Brush backgroundBrush = GetBrushResource("Pokemon.ControlBackgroundBrush", Brushes.DimGray);
             Brush borderBrush = GetBrushResource("Pokemon.ControlBorderBrush", Brushes.Gray);
             Brush accentBrush = GetBrushResource("Pokemon.AccentBrush", Brushes.DeepSkyBlue);
+            Brush accentContrastBrush = GetBrushResource("Pokemon.AccentContrastBrush", Brushes.White);
             Brush textBrush = EnsureReadableBrush(GetBrushResource("Pokemon.TextBrush", Brushes.White), backgroundBrush);
 
             comboBox.Foreground = textBrush;
@@ -1057,12 +1016,12 @@ namespace VisualStudioPokemon.UI
             comboBox.Resources[SystemColors.ControlBrushKey] = backgroundBrush;
             comboBox.Resources[SystemColors.ControlTextBrushKey] = textBrush;
             comboBox.Resources[SystemColors.HighlightBrushKey] = accentBrush;
-            comboBox.Resources[SystemColors.HighlightTextBrushKey] = Brushes.White;
+            comboBox.Resources[SystemColors.HighlightTextBrushKey] = accentContrastBrush;
             comboBox.Resources[SystemColors.InactiveSelectionHighlightBrushKey] = backgroundBrush;
             comboBox.Resources[SystemColors.InactiveSelectionHighlightTextBrushKey] = textBrush;
 
-            Popup popup = comboBox.Template.FindName("PART_Popup", comboBox) as Popup;
-            Border popupBorder = popup != null ? popup.Child as Border : null;
+            Border? popupBorder = comboBox.Template.FindName("PART_Popup", comboBox) is Popup popup ?
+                popup.Child as Border : null;
             if (popupBorder != null)
             {
                 popupBorder.Background = backgroundBrush;
@@ -1072,9 +1031,7 @@ namespace VisualStudioPokemon.UI
 
         private static Brush EnsureReadableBrush(Brush preferredTextBrush, Brush backgroundBrush)
         {
-            SolidColorBrush text = preferredTextBrush as SolidColorBrush;
-            SolidColorBrush background = backgroundBrush as SolidColorBrush;
-            if (text == null || background == null)
+            if (preferredTextBrush is not SolidColorBrush text || backgroundBrush is not SolidColorBrush background)
             {
                 return preferredTextBrush;
             }
@@ -1146,11 +1103,8 @@ namespace VisualStudioPokemon.UI
             try
             {
                 Type vsColorTheme = ThemePalette.FindType("Microsoft.VisualStudio.PlatformUI.VSColorTheme");
-                EventInfo themeChangedEvent = vsColorTheme != null ? vsColorTheme.GetEvent("ThemeChanged", BindingFlags.Static | BindingFlags.Public) : null;
-                if (themeChangedEvent != null)
-                {
-                    themeChangedEvent.RemoveEventHandler(null, vsThemeChangedHandler);
-                }
+                EventInfo? themeChangedEvent = vsColorTheme?.GetEvent("ThemeChanged", BindingFlags.Static | BindingFlags.Public);
+                themeChangedEvent?.RemoveEventHandler(null, vsThemeChangedHandler);
             }
             catch
             {
@@ -1174,13 +1128,14 @@ namespace VisualStudioPokemon.UI
 
         public sealed class Companion
         {
-            internal Companion(PokemonSpec spec, FrameworkElement visual, IPokemonSpriteView sprite, Image speechBubble, Border selectionRing)
+            internal Companion(PokemonSpec spec, FrameworkElement visual, IPokemonSpriteView sprite, Image speechBubble, Border selectionRing, TextBlock nicknameLabel)
             {
                 Spec = spec;
                 Visual = visual;
                 Sprite = sprite;
                 SpeechBubble = speechBubble;
                 SelectionRing = selectionRing;
+                NicknameLabel = nicknameLabel;
                 SpeechTimer = new DispatcherTimer();
                 SpeechTimer.Tick += delegate
                 {
@@ -1194,6 +1149,7 @@ namespace VisualStudioPokemon.UI
             internal IPokemonSpriteView Sprite { get; private set; }
             internal Image SpeechBubble { get; private set; }
             internal Border SelectionRing { get; private set; }
+            internal TextBlock NicknameLabel { get; private set; }
             internal DispatcherTimer SpeechTimer { get; private set; }
             internal PokemonAnimationState State { get; set; }
             internal int FramesInState { get; set; }
@@ -1270,12 +1226,12 @@ namespace VisualStudioPokemon.UI
                     }
                 }
 
-                string[] assemblyNames = new[]
-                {
+                string[] assemblyNames =
+                [
                     "Microsoft.VisualStudio.Shell.15.0",
                     "Microsoft.VisualStudio.Shell.Framework",
                     "Microsoft.VisualStudio.PlatformUI"
-                };
+                ];
 
                 foreach (string assemblyName in assemblyNames)
                 {
@@ -1321,16 +1277,15 @@ namespace VisualStudioPokemon.UI
                         return fallback;
                     }
 
-                    object value = method.Invoke(null, new[] { key });
-                    if (value is DrawingColor)
+                    object value = method.Invoke(null, [key]);
+                    if (value is DrawingColor drawingColor)
                     {
-                        DrawingColor drawingColor = (DrawingColor)value;
                         return MediaColor.FromArgb(drawingColor.A, drawingColor.R, drawingColor.G, drawingColor.B);
                     }
 
-                    if (value is MediaColor)
+                    if (value is MediaColor color)
                     {
-                        return (MediaColor)value;
+                        return color;
                     }
                 }
                 catch
@@ -1364,7 +1319,7 @@ namespace VisualStudioPokemon.UI
             PlayPokeballAt(Playground.ActualWidth / 2, Playground.ActualHeight / 2, null, 64);
         }
 
-        private void PlayPokeballAt(double centerX, double centerY, Action completed, double size)
+        private void PlayPokeballAt(double centerX, double centerY, Action? completed, double size)
         {
             string path = PokemonResourceLocator.GetResourcePath("pokeball_sprite_sheet.png");
             var animation = new PokeballAnimationImage
@@ -1381,10 +1336,7 @@ namespace VisualStudioPokemon.UI
             animation.Completed += delegate
             {
                 PokeballLayer.Children.Remove(animation);
-                if (completed != null)
-                {
-                    completed();
-                }
+                completed?.Invoke();
             };
             animation.Play(path);
         }

@@ -1,4 +1,4 @@
-<UserControl x:Class="VisualStudioPokemon.UI.PokemonControl"
+﻿<UserControl x:Class="VisualStudioPokemon.UI.PokemonControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -19,9 +19,8 @@
         <SolidColorBrush x:Key="Pokemon.ControlBorderBrush" Color="#55555A" />
         <SolidColorBrush x:Key="Pokemon.ButtonBackgroundBrush" Color="#3A3D41" />
         <SolidColorBrush x:Key="Pokemon.AccentBrush" Color="#007ACC" />
-
-        <SolidColorBrush x:Key="Pokemon.ComboBoxEditableBackgroundBrush" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="Pokemon.ComboBoxEditableTextBrush" Color="#1E1E1E" />
+        <SolidColorBrush x:Key="Pokemon.ComboBoxEditableBackgroundBrush" Color="#333337" />
+        <SolidColorBrush x:Key="Pokemon.ComboBoxEditableTextBrush" Color="#F1F1F1" />
 
         <Style x:Key="Pokemon.LabelStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource Pokemon.TextBrush}" />
@@ -81,10 +80,14 @@
 
         <!-- Stile usato SOLO dal TextBox interno delle ComboBox editabili -->
         <Style x:Key="Pokemon.ComboBoxEditableTextBoxStyle" TargetType="{x:Type TextBox}">
-            <Setter Property="Background" Value="{DynamicResource Pokemon.ComboBoxEditableBackgroundBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource Pokemon.ComboBoxEditableTextBrush}" />
-            <Setter Property="CaretBrush" Value="{DynamicResource Pokemon.ComboBoxEditableTextBrush}" />
-            <Setter Property="SelectionBrush" Value="{DynamicResource Pokemon.AccentBrush}" />
+            <Setter Property="Background"
+            Value="{DynamicResource Pokemon.ControlBackgroundBrush}" />
+            <Setter Property="Foreground"
+            Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="CaretBrush"
+            Value="{DynamicResource Pokemon.TextBrush}" />
+            <Setter Property="SelectionBrush"
+            Value="{DynamicResource Pokemon.AccentBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="4,2" />
@@ -111,13 +114,13 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
                                 <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource Pokemon.AccentBrush}" />
-                                <Setter Property="Foreground" Value="White" />
-                                <Setter Property="TextElement.Foreground" Value="White" />
+                                <Setter Property="Foreground" Value="{DynamicResource Pokemon.AccentContrastBrush}" />
+                                <Setter Property="TextElement.Foreground" Value="{DynamicResource Pokemon.AccentContrastBrush}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource Pokemon.AccentBrush}" />
-                                <Setter Property="Foreground" Value="White" />
-                                <Setter Property="TextElement.Foreground" Value="White" />
+                                <Setter Property="Foreground" Value="{DynamicResource Pokemon.AccentContrastBrush}" />
+                                <Setter Property="TextElement.Foreground" Value="{DynamicResource Pokemon.AccentContrastBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Foreground" Value="{DynamicResource Pokemon.MutedTextBrush}" />
@@ -332,8 +335,8 @@
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
                     <Setter Property="Background" Value="{DynamicResource Pokemon.AccentBrush}" />
-                    <Setter Property="Foreground" Value="White" />
-                    <Setter Property="TextElement.Foreground" Value="White" />
+                    <Setter Property="Foreground" Value="{DynamicResource Pokemon.AccentContrastBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{DynamicResource Pokemon.AccentContrastBrush}" />
                 </Trigger>
             </Style.Triggers>
         </Style>

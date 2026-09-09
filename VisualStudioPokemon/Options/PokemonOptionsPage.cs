@@ -15,6 +15,11 @@ namespace VisualStudioPokemon.Options
         public PokemonSize DefaultSize { get; set; } = PokemonSize.Medium;
 
         [Category("General")]
+        [DisplayName("Movement speed")]
+        [Description("Movement speed of newly spawned Pokemon. Medium keeps the current speed.")]
+        public PokemonMovementSpeed MovementSpeed { get; set; } = PokemonMovementSpeed.Medium;
+
+        [Category("General")]
         [DisplayName("Shiny odds")]
         [Description("One-in-N chance for Random to create a shiny companion. Use 1 to force shiny.")]
         public int ShinyOdds { get; set; } = 8192;

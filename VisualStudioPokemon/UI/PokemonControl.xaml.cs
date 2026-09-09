@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -177,6 +177,7 @@ namespace VisualStudioPokemon.UI
             TryHookVsThemeChanged();
             EnsureRestored();
             SizeCombo.SelectedItem = CurrentOptions?.DefaultSize ?? PokemonSize.Medium;
+            ApplyMovementSpeed();
             await ApplyDisplayModeAsync(CurrentOptions?.WalkAlongVisualStudioStatusBar == true);
             UpdateSelectionUi();
             UpdateStatus();
@@ -191,6 +192,7 @@ namespace VisualStudioPokemon.UI
         private async void PokemonOptionsPage_OptionsApplied(object sender, EventArgs e)
         {
             SizeCombo.SelectedItem = CurrentOptions?.DefaultSize ?? PokemonSize.Medium;
+            ApplyMovementSpeed();
             await ApplyDisplayModeAsync(CurrentOptions?.WalkAlongVisualStudioStatusBar == true);
         }
 
@@ -385,15 +387,27 @@ namespace VisualStudioPokemon.UI
             Panel.SetZIndex(speechBubble, 30);
             root.Children.Add(speechBubble);
 
+            double labelWidth = Math.Max(32, width - 2);
+            double labelFontSize = spec.Size switch
+            {
+                PokemonSize.Nano => 9,
+                PokemonSize.Small => 10,
+                _ => 11
+            };
+
             var label = new TextBlock
             {
                 Text = spec.Nickname,
                 Foreground = GetBrushResource("Pokemon.TextBrush", Brushes.White),
-                FontSize = 11,
+                FontSize = labelFontSize,
                 FontWeight = FontWeights.SemiBold,
                 TextAlignment = TextAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
+                Width = labelWidth,
+                MaxWidth = labelWidth,
                 TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = spec.Nickname,
                 Effect = new System.Windows.Media.Effects.DropShadowEffect
                 {
                     BlurRadius = 3,
@@ -413,10 +427,13 @@ namespace VisualStudioPokemon.UI
             var companion = new Companion(spec, root, (IPokemonSpriteView)sprite, speechBubble, selectionRing, label)
             {
                 Lane = 0,
-                Speed = random.NextDouble() * 0.8 + 0.5,
+                BaseSpeed = random.NextDouble() * 0.8 + 0.5,
+                Speed = 0,
                 Phase = random.NextDouble() * Math.PI * 2,
                 HoldFrames = random.Next(45, 110)
             };
+
+            companion.Speed = companion.BaseSpeed * GetMovementSpeedMultiplier();
 
             companion.BaseY = GetRandomBaseY(companion);
             companion.X = FindOpenTarget(companion, MovementMinX(), MovementMaxX(companion), preferFarAway: false);
@@ -579,6 +596,32 @@ namespace VisualStudioPokemon.UI
             foreach (Companion companion in companions)
             {
                 Position(companion, companion.CurrentBob);
+            }
+        }
+
+        private double GetMovementSpeed()
+        {
+            double baseSpeed = random.NextDouble() * 0.8 + 0.5;
+            return baseSpeed * GetMovementSpeedMultiplier();
+        }
+
+        private double GetMovementSpeedMultiplier()
+        {
+            return (CurrentOptions?.MovementSpeed ?? PokemonMovementSpeed.Medium) switch
+            {
+                PokemonMovementSpeed.Slow => 0.65,
+                PokemonMovementSpeed.Fast => 1.6,
+                _ => 1.0
+            };
+        }
+
+        private void ApplyMovementSpeed()
+        {
+            double multiplier = GetMovementSpeedMultiplier();
+
+            foreach (Companion companion in companions)
+            {
+                companion.Speed = companion.BaseSpeed * multiplier;
             }
         }
 
@@ -1262,6 +1305,7 @@ namespace VisualStudioPokemon.UI
             internal double TargetX { get; set; }
             internal double TargetY { get; set; }
             internal double BaseY { get; set; }
+            internal double BaseSpeed { get; set; }
             internal double Speed { get; set; }
             internal double Phase { get; set; }
             internal double CurrentBob { get; set; }

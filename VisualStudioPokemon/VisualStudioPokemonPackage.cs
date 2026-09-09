@@ -39,12 +39,25 @@ namespace VisualStudioPokemon
         /// </summary>
         public const string PackageGuidString = PackageGuids.PackageGuidString;
 
+        internal static VisualStudioPokemonPackage? Instance { get; private set; }
+
         #region Package Members
 
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            Instance = this;
             await PokemonCommands.InitializeAsync(this);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (ReferenceEquals(Instance, this))
+            {
+                Instance = null;
+            }
+
+            base.Dispose(disposing);
         }
 
         internal async Task<PokemonControl> ShowPokemonWindowAsync(CancellationToken cancellationToken = default)

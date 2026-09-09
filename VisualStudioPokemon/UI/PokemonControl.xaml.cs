@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -14,6 +15,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using VisualStudioPokemon.Models;
+using VisualStudioPokemon.Options;
 using VisualStudioPokemon.Services;
 using DrawingColor = System.Drawing.Color;
 using MediaColor = System.Windows.Media.Color;
@@ -30,7 +32,12 @@ namespace VisualStudioPokemon.UI
         private readonly PokemonSessionStore store = new();
         private readonly ObservableCollection<Companion> companions = [];
         private readonly ICollectionView speciesView;
+        private readonly Grid mainWindowOverlay;
+        private readonly Canvas mainWindowPlayground;
+        private readonly Canvas mainWindowPokeballLayer;
         private bool restored;
+        private bool mainWindowMode;
+        private bool overlayUnavailable;
         private bool suppressSpeciesFilter;
         private bool suppressCompanionSelection;
         private Companion? selectedCompanion;
@@ -39,6 +46,18 @@ namespace VisualStudioPokemon.UI
         public PokemonControl()
         {
             InitializeComponent();
+
+            mainWindowPlayground = new Canvas { Background = null, ClipToBounds = false };
+            mainWindowPokeballLayer = new Canvas { Background = null, ClipToBounds = false, IsHitTestVisible = false };
+            mainWindowOverlay = new Grid
+            {
+                Background = null,
+                ClipToBounds = false,
+                Height = GetLaneHeight()
+            };
+            mainWindowOverlay.Children.Add(mainWindowPlayground);
+            mainWindowOverlay.Children.Add(mainWindowPokeballLayer);
+            mainWindowPlayground.SizeChanged += Playground_SizeChanged;
 
             ApplyTheme();
             TryHookVsThemeChanged();
@@ -49,7 +68,7 @@ namespace VisualStudioPokemon.UI
             SpeciesCombo.AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler(SpeciesCombo_TextChanged));
 
             SizeCombo.ItemsSource = Enum.GetValues(typeof(PokemonSize));
-            SizeCombo.SelectedItem = PokemonSize.Medium;
+            SizeCombo.SelectedItem = CurrentOptions?.DefaultSize ?? PokemonSize.Medium;
 
             SpawnedCombo.ItemsSource = companions;
 
@@ -63,7 +82,14 @@ namespace VisualStudioPokemon.UI
 
             Loaded += PokemonControl_Loaded;
             Unloaded += PokemonControl_Unloaded;
+            PokemonOptionsPage.OptionsApplied += PokemonOptionsPage_OptionsApplied;
         }
+
+        private PokemonOptionsPage? CurrentOptions => VisualStudioPokemonPackage.Instance?.Options;
+
+        private Canvas ActivePlayground => mainWindowMode ? mainWindowPlayground : Playground;
+
+        private Canvas ActivePokeballLayer => mainWindowMode ? mainWindowPokeballLayer : PokeballLayer;
 
         public void EnsureStarted()
         {
@@ -71,7 +97,8 @@ namespace VisualStudioPokemon.UI
             if (companions.Count == 0)
             {
                 PokemonSpecies first = PokemonCatalog.All.FirstOrDefault() ?? PokemonCatalog.Find("bulbasaur");
-                SpawnPokemon(new PokemonSpec(first.Key, first.DisplayName, first.DisplayName, PokemonSize.Medium, false));
+                PokemonSize size = CurrentOptions?.DefaultSize ?? PokemonSize.Medium;
+                SpawnPokemon(new PokemonSpec(first.Key, first.DisplayName, first.DisplayName, size, false));
             }
         }
 
@@ -91,7 +118,8 @@ namespace VisualStudioPokemon.UI
             EnsureRestored();
             PokemonSpecies species = PokemonCatalog.GetRandomSpecies();
             var size = SizeCombo.SelectedItem is PokemonSize defaultSize ? defaultSize : PokemonSize.Medium;
-            bool shiny = ShinyCheck.IsChecked == true || random.Next(8192) == 0;
+            int shinyOdds = Math.Max(1, CurrentOptions?.ShinyOdds ?? 8192);
+            bool shiny = ShinyCheck.IsChecked == true || random.Next(shinyOdds) == 0;
             SpawnPokemon(new PokemonSpec(species.Key, species.DisplayName, species.DisplayName, size, shiny));
             ResetSpeciesFilter(species);
         }
@@ -108,7 +136,8 @@ namespace VisualStudioPokemon.UI
 
             selectedCompanion = null;
             companions.Clear();
-            Playground.Children.Clear();
+            ActivePlayground.Children.Clear();
+            UpdateOverlayHeight();
             SyncCompanionSelectors();
             store.Save([]);
             UpdateSelectionUi();
@@ -144,9 +173,12 @@ namespace VisualStudioPokemon.UI
             MessageBox.Show(message, "Pokemon Roll-call", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private void PokemonControl_Loaded(object sender, RoutedEventArgs e)
+        private async void PokemonControl_Loaded(object sender, RoutedEventArgs e)
         {
+            TryHookVsThemeChanged();
             EnsureRestored();
+            SizeCombo.SelectedItem = CurrentOptions?.DefaultSize ?? PokemonSize.Medium;
+            await ApplyDisplayModeAsync(CurrentOptions?.WalkAlongVisualStudioStatusBar == true);
             UpdateSelectionUi();
             UpdateStatus();
             Dispatcher.BeginInvoke(new Action(PlayWindowOpenAnimation), DispatcherPriority.Loaded);
@@ -155,6 +187,12 @@ namespace VisualStudioPokemon.UI
         private void PokemonControl_Unloaded(object sender, RoutedEventArgs e)
         {
             TryUnhookVsThemeChanged();
+        }
+
+        private async void PokemonOptionsPage_OptionsApplied(object sender, EventArgs e)
+        {
+            SizeCombo.SelectedItem = CurrentOptions?.DefaultSize ?? PokemonSize.Medium;
+            await ApplyDisplayModeAsync(CurrentOptions?.WalkAlongVisualStudioStatusBar == true);
         }
 
         private void SpawnButton_Click(object sender, RoutedEventArgs e)
@@ -242,10 +280,84 @@ namespace VisualStudioPokemon.UI
             }
 
             restored = true;
+            if (CurrentOptions?.RestorePreviousCompanions == false)
+            {
+                return;
+            }
+
             foreach (PokemonSpec spec in store.Load())
             {
                 PokemonSpecies existing = PokemonCatalog.Find(spec.Species);
                 SpawnPokemon(new PokemonSpec(existing.Key, existing.DisplayName, spec.Nickname, spec.Size, spec.Shiny), save: false);
+            }
+        }
+
+        private async Task ApplyDisplayModeAsync(bool useMainWindow)
+        {
+            if (useMainWindow == mainWindowMode)
+            {
+                overlayUnavailable = false;
+                UpdateStatus();
+                return;
+            }
+
+            if (useMainWindow)
+            {
+                UpdateOverlayHeight();
+                if (!await VisualStudioStatusBarOverlay.AttachAsync(mainWindowOverlay))
+                {
+                    overlayUnavailable = true;
+                    UpdateStatus();
+                    return;
+                }
+
+                Playground.Children.Clear();
+                PokeballLayer.Children.Clear();
+                foreach (Companion companion in companions)
+                {
+                    mainWindowPlayground.Children.Add(companion.Visual);
+                }
+
+                mainWindowMode = true;
+            }
+            else
+            {
+                mainWindowPlayground.Children.Clear();
+                mainWindowPokeballLayer.Children.Clear();
+                foreach (Companion companion in companions)
+                {
+                    Playground.Children.Add(companion.Visual);
+                }
+
+                mainWindowMode = false;
+                await VisualStudioStatusBarOverlay.DetachAsync(mainWindowOverlay);
+            }
+
+            overlayUnavailable = false;
+            foreach (Companion companion in companions)
+            {
+                companion.BaseY = MovementMinY(companion);
+                companion.TargetY = companion.BaseY;
+                ClampToPlayground(companion);
+                Position(companion, 0);
+            }
+
+            UpdateStatus();
+        }
+
+        private void UpdateOverlayHeight()
+        {
+            mainWindowOverlay.Height = GetLaneHeight();
+            if (!mainWindowMode)
+            {
+                return;
+            }
+
+            foreach (Companion companion in companions)
+            {
+                companion.BaseY = MovementMinY(companion);
+                companion.TargetY = companion.BaseY;
+                Position(companion, 0);
             }
         }
 
@@ -348,8 +460,9 @@ namespace VisualStudioPokemon.UI
             root.ContextMenu = contextMenu;
 
             root.Opacity = 0;
-            Playground.Children.Add(root);
+            ActivePlayground.Children.Add(root);
             companions.Add(companion);
+            UpdateOverlayHeight();
             SetState(companion, PokemonAnimationState.Idle);
             ClampToPlayground(companion);
             Position(companion, 0);
@@ -428,7 +541,7 @@ namespace VisualStudioPokemon.UI
 
         private void AnimationTimer_Tick(object sender, EventArgs e)
         {
-            if (companions.Count == 0 || Playground.ActualWidth <= 1 || Playground.ActualHeight <= 1)
+            if (companions.Count == 0 || ActivePlayground.ActualWidth <= 1 || ActivePlayground.ActualHeight <= 1)
             {
                 return;
             }
@@ -474,7 +587,7 @@ namespace VisualStudioPokemon.UI
         {
             double minX = MovementMinX();
             double maxX = MovementMaxX(companion);
-            double minY = MovementMinY();
+            double minY = MovementMinY(companion);
             double maxY = MovementMaxY(companion);
             if (maxX <= minX && maxY <= minY)
             {
@@ -485,7 +598,7 @@ namespace VisualStudioPokemon.UI
             }
 
             double targetX = Math.Max(minX, Math.Min(maxX, FindOpenTarget(companion, minX, maxX, preferFarAway: true)));
-            double targetY = minY + random.NextDouble() * Math.Max(1, maxY - minY);
+            double targetY = maxY <= minY ? minY : minY + random.NextDouble() * (maxY - minY);
 
             if (Math.Abs(targetX - companion.X) < 3 && Math.Abs(targetY - companion.BaseY) < 3)
             {
@@ -503,7 +616,7 @@ namespace VisualStudioPokemon.UI
         {
             double minX = MovementMinX();
             double maxX = MovementMaxX(companion);
-            double minY = MovementMinY();
+            double minY = MovementMinY(companion);
             double maxY = MovementMaxY(companion);
             companion.TargetX = Math.Max(minX, Math.Min(maxX, companion.TargetX));
             companion.TargetY = Math.Max(minY, Math.Min(maxY, companion.TargetY));
@@ -538,13 +651,42 @@ namespace VisualStudioPokemon.UI
                 double candidate = minX + random.NextDouble() * (maxX - minX);
                 fallback = candidate;
 
-                if (!preferFarAway || Math.Abs(candidate - companion.X) >= minimumMove)
+                bool movedFarEnough = !preferFarAway || Math.Abs(candidate - companion.X) >= minimumMove;
+                if (movedFarEnough && IsOpenHorizontalTarget(companion, candidate))
                 {
                     return candidate;
                 }
             }
 
             return fallback;
+        }
+
+        private bool IsOpenHorizontalTarget(Companion companion, double candidateX)
+        {
+            if (!mainWindowMode)
+            {
+                return true;
+            }
+
+            double candidateRight = candidateX + companion.Visual.Width;
+            foreach (Companion other in companions)
+            {
+                if (ReferenceEquals(other, companion))
+                {
+                    continue;
+                }
+
+                double otherX = other.State == PokemonAnimationState.WalkLeft || other.State == PokemonAnimationState.WalkRight
+                    ? other.TargetX
+                    : other.X;
+                double otherRight = otherX + other.Visual.Width;
+                if (candidateX < otherRight + MinimumCompanionGap && candidateRight + MinimumCompanionGap > otherX)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private void Swipe(Companion companion)
@@ -591,21 +733,25 @@ namespace VisualStudioPokemon.UI
         {
             companion.X = Math.Max(MovementMinX(), Math.Min(MovementMaxX(companion), companion.X));
             companion.TargetX = Math.Max(MovementMinX(), Math.Min(MovementMaxX(companion), companion.TargetX));
-
-            double maxY = Playground.ActualHeight <= 1
-                ? PlaygroundPadding
-                : Math.Max(PlaygroundPadding, Playground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
-            companion.BaseY = Math.Max(PlaygroundPadding, Math.Min(maxY, companion.BaseY));
+            double minY = MovementMinY(companion);
+            double maxY = MovementMaxY(companion);
+            companion.BaseY = Math.Max(minY, Math.Min(maxY, companion.BaseY));
+            companion.TargetY = Math.Max(minY, Math.Min(maxY, companion.TargetY));
         }
 
         private double GetRandomBaseY(Companion companion)
         {
-            if (Playground.ActualHeight <= 1)
+            if (mainWindowMode)
+            {
+                return MovementMinY(companion);
+            }
+
+            if (ActivePlayground.ActualHeight <= 1)
             {
                 return PlaygroundPadding;
             }
 
-            double maxY = Math.Max(PlaygroundPadding, Playground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
+            double maxY = Math.Max(PlaygroundPadding, ActivePlayground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
             double minY = Math.Max(PlaygroundPadding, maxY - 36);
             return minY + random.NextDouble() * Math.Max(1, maxY - minY);
         }
@@ -623,27 +769,38 @@ namespace VisualStudioPokemon.UI
 
         private double MovementMaxX(Companion companion)
         {
-            if (Playground.ActualWidth <= 1)
+            if (ActivePlayground.ActualWidth <= 1)
             {
                 return PlaygroundPadding;
             }
 
-            return Math.Max(PlaygroundPadding, Playground.ActualWidth - PlaygroundPadding - companion.Visual.Width);
+            return Math.Max(PlaygroundPadding, ActivePlayground.ActualWidth - PlaygroundPadding - companion.Visual.Width);
         }
 
-        private double MovementMinY()
+        private double MovementMinY(Companion companion)
         {
+            if (mainWindowMode)
+            {
+                double height = ActivePlayground.ActualHeight > 1 ? ActivePlayground.ActualHeight : mainWindowOverlay.Height;
+                return Math.Max(0, height - companion.Visual.Height);
+            }
+
             return PlaygroundPadding;
         }
 
         private double MovementMaxY(Companion companion)
         {
-            if (Playground.ActualHeight <= 1)
+            if (mainWindowMode)
+            {
+                return MovementMinY(companion);
+            }
+
+            if (ActivePlayground.ActualHeight <= 1)
             {
                 return PlaygroundPadding;
             }
 
-            return Math.Max(PlaygroundPadding, Playground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
+            return Math.Max(PlaygroundPadding, ActivePlayground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
         }
 
         private void SelectCompanion(Companion? companion, bool fromList)
@@ -682,8 +839,9 @@ namespace VisualStudioPokemon.UI
         {
             companion.SpeechTimer.Stop();
             companion.Visual.Opacity = 0;
-            PlayPokeballAt(companion.X + companion.Visual.Width / 2, companion.BaseY + companion.Visual.Height / 2, delegate { Playground.Children.Remove(companion.Visual); }, 48);
+            PlayPokeballAt(companion.X + companion.Visual.Width / 2, companion.BaseY + companion.Visual.Height / 2, delegate { ActivePlayground.Children.Remove(companion.Visual); }, 48);
             companions.Remove(companion);
+            UpdateOverlayHeight();
 
             if (ReferenceEquals(selectedCompanion, companion))
             {
@@ -716,6 +874,12 @@ namespace VisualStudioPokemon.UI
         private void UpdateStatus()
         {
             string countText = companions.Count == 1 ? "1 companion" : companions.Count + " companions";
+            countText += mainWindowMode ? " - status bar mode" : " - tool window mode";
+            if (overlayUnavailable)
+            {
+                countText += " (status bar unavailable)";
+            }
+
             if (selectedCompanion != null)
             {
                 countText += " - " + selectedCompanion.Spec.Nickname + " selected";
@@ -1251,12 +1415,12 @@ namespace VisualStudioPokemon.UI
 
         private void PlayWindowOpenAnimation()
         {
-            if (Playground.ActualWidth <= 1 || Playground.ActualHeight <= 1)
+            if (ActivePlayground.ActualWidth <= 1 || ActivePlayground.ActualHeight <= 1)
             {
                 return;
             }
 
-            PlayPokeballAt(Playground.ActualWidth / 2, Playground.ActualHeight / 2, null, 64);
+            PlayPokeballAt(ActivePlayground.ActualWidth / 2, ActivePlayground.ActualHeight / 2, null, 64);
         }
 
         private void PlayPokeballAt(double centerX, double centerY, Action? completed, double size)
@@ -1272,10 +1436,11 @@ namespace VisualStudioPokemon.UI
             Canvas.SetLeft(animation, Math.Max(0, centerX - size / 2));
             Canvas.SetTop(animation, Math.Max(0, centerY - size / 2));
             Panel.SetZIndex(animation, 5000);
-            PokeballLayer.Children.Add(animation);
+            Canvas effectLayer = ActivePokeballLayer;
+            effectLayer.Children.Add(animation);
             animation.Completed += delegate
             {
-                PokeballLayer.Children.Remove(animation);
+                effectLayer.Children.Remove(animation);
                 completed?.Invoke();
             };
             animation.Play(path);

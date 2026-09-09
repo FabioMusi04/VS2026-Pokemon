@@ -40,11 +40,9 @@ namespace VisualStudioPokemon.Services
                 string species = Uri.UnescapeDataString(parts[0]);
                 string displayName = Uri.UnescapeDataString(parts[1]);
                 string nickname = Uri.UnescapeDataString(parts[2]);
-                PokemonSize size = PokemonSize.Medium;
-                bool shiny = false;
 
-                Enum.TryParse(parts[3], out size);
-                Boolean.TryParse(parts[4], out shiny);
+                Enum.TryParse(parts[3], out PokemonSize size);
+                Boolean.TryParse(parts[4], out bool shiny);
 
                 result.Add(new PokemonSpec(species, displayName, nickname, size, shiny));
             }

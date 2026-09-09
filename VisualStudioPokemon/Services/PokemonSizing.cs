@@ -6,17 +6,14 @@ namespace VisualStudioPokemon.Services
     {
         public static double ToPixels(PokemonSize size)
         {
-            switch (size)
+            return size switch
             {
-                case PokemonSize.Nano:
-                    return 40;
-                case PokemonSize.Small:
-                    return 56;
-                case PokemonSize.Large:
-                    return 104;
-                default:
-                    return 78;
-            }
+                PokemonSize.Nano => 40,
+                PokemonSize.Small => 56,
+                PokemonSize.Large => 104,
+                PokemonSize.Medium => 78,
+                _ => 78,
+            };
         }
     }
 }

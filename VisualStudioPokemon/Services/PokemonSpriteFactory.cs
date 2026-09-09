@@ -19,10 +19,10 @@ namespace VisualStudioPokemon.Services
             return host;
         }
 
-        public static string FindSpritePath(PokemonSpec spec, PokemonAnimationState state)
+        public static string? FindSpritePath(PokemonSpec spec, PokemonAnimationState state)
         {
-            string speciesDirectory = FindSpeciesDirectory(spec);
-            if (String.IsNullOrWhiteSpace(speciesDirectory) || !Directory.Exists(speciesDirectory))
+            string? speciesDirectory = FindSpeciesDirectory(spec);
+            if (string.IsNullOrWhiteSpace(speciesDirectory) || !Directory.Exists(speciesDirectory))
             {
                 return null;
             }
@@ -57,35 +57,28 @@ namespace VisualStudioPokemon.Services
 
         private static string[] GetSpriteCandidates(string variant, PokemonAnimationState state)
         {
-            switch (state)
+            return state switch
             {
-                case PokemonAnimationState.WalkLeft:
-                    return new[]
-                    {
+                PokemonAnimationState.WalkLeft =>
+                                    [
                         variant + "_walk_left_8fps.gif",
                         variant + "_walk_8fps.gif",
                         variant + "_idle_8fps.gif"
-                    };
-
-                case PokemonAnimationState.WalkRight:
-                    return new[]
-                    {
+                    ],
+                PokemonAnimationState.WalkRight =>
+                    [
                         variant + "_walk_8fps.gif",
                         variant + "_idle_8fps.gif"
-                    };
-
-                case PokemonAnimationState.Swipe:
-                case PokemonAnimationState.Idle:
-                default:
-                    return new[]
-                    {
+                    ],
+                _ =>
+                    [
                         variant + "_idle_8fps.gif",
                         variant + "_walk_8fps.gif"
-                    };
-            }
+                    ],
+            };
         }
 
-        private static string FindSpeciesDirectory(PokemonSpec spec)
+        private static string? FindSpeciesDirectory(PokemonSpec spec)
         {
             string root = PokemonResourceLocator.ResourcesRoot;
             PokemonSpecies species = PokemonCatalog.Find(spec.Species);
@@ -110,7 +103,7 @@ namespace VisualStudioPokemon.Services
         {
             private readonly PokemonSpec spec;
             private readonly AnimatedGifImage image;
-            private string currentPath;
+            private string? currentPath;
 
             public PokemonSpriteHost(PokemonSpec spec, double size)
             {
@@ -136,24 +129,30 @@ namespace VisualStudioPokemon.Services
 
             public void SetAnimation(PokemonAnimationState state)
             {
-                string path = FindSpritePath(spec, state);
-                if (!String.IsNullOrWhiteSpace(path) && !StringComparer.OrdinalIgnoreCase.Equals(path, currentPath))
+                string? path = FindSpritePath(spec, state);
+
+                if (path is null || string.IsNullOrWhiteSpace(path))
+                {
+                    image.RenderTransform = state == PokemonAnimationState.WalkLeft
+                        ? new ScaleTransform(-1, 1)
+                        : new ScaleTransform(1, 1);
+
+                    return;
+                }
+
+                if (!StringComparer.OrdinalIgnoreCase.Equals(path, currentPath))
                 {
                     currentPath = path;
                     image.SetImageFile(path);
                 }
 
-                bool hasNativeLeftFacingSprite = !String.IsNullOrWhiteSpace(path)
-                    && path.IndexOf("_walk_left_", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool hasNativeLeftFacingSprite =
+                    path.IndexOf("_walk_left_", StringComparison.OrdinalIgnoreCase) >= 0;
 
-                if (state == PokemonAnimationState.WalkLeft && !hasNativeLeftFacingSprite)
-                {
-                    image.RenderTransform = new ScaleTransform(-1, 1);
-                }
-                else
-                {
-                    image.RenderTransform = new ScaleTransform(1, 1);
-                }
+                image.RenderTransform =
+                    state == PokemonAnimationState.WalkLeft && !hasNativeLeftFacingSprite
+                        ? new ScaleTransform(-1, 1)
+                        : new ScaleTransform(1, 1);
             }
         }
     }

@@ -13,7 +13,7 @@ namespace VisualStudioPokemon.UI
     /// </summary>
     internal static class VisualStudioStatusBarOverlay
     {
-        private const double StatusBarOverlap = 6;
+        private const double StatusBarOverlap = 20;
         private static FrameworkElement? statusBar;
         private static Grid? rootGrid;
         private static FrameworkElement? attachedElement;
@@ -55,15 +55,9 @@ namespace VisualStudioPokemon.UI
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-            if (rootGrid != null)
-            {
-                rootGrid.Children.Remove(element);
-            }
+            rootGrid?.Children.Remove(element);
 
-            if (statusBar != null)
-            {
-                statusBar.SizeChanged -= StatusBar_SizeChanged;
-            }
+            statusBar?.SizeChanged -= StatusBar_SizeChanged;
 
             if (ReferenceEquals(attachedElement, element))
             {

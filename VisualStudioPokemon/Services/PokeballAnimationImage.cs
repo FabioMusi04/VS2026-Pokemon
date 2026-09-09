@@ -10,12 +10,12 @@ namespace VisualStudioPokemon.Services
     internal sealed class PokeballAnimationImage : Image
     {
         private readonly DispatcherTimer timer;
-        private BitmapSource sourceSheet;
+        private BitmapSource? sourceSheet;
         private int frameIndex;
         private int frameCount;
         private int frameSize;
 
-        public event EventHandler Completed;
+        public event EventHandler Completed = delegate { };
 
         public PokeballAnimationImage()
         {

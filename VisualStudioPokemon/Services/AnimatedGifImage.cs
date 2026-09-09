@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using DrawingImage = System.Drawing.Image;
@@ -14,9 +13,9 @@ namespace VisualStudioPokemon.Services
     internal sealed class AnimatedGifImage : WpfImage
     {
         private readonly DispatcherTimer timer;
-        private readonly List<BitmapSource> frames = new List<BitmapSource>();
-        private readonly List<int> frameDelays = new List<int>();
-        private string currentPath;
+        private readonly List<BitmapSource> frames = [];
+        private readonly List<int> frameDelays = [];
+        private string currentPath = string.Empty;
         private int frameIndex;
 
         public AnimatedGifImage()
@@ -84,27 +83,23 @@ namespace VisualStudioPokemon.Services
 
         private void LoadGif(string path)
         {
-            using (DrawingImage gif = DrawingImage.FromFile(path))
+            using DrawingImage gif = DrawingImage.FromFile(path);
+            var dimension = new FrameDimension(gif.FrameDimensionsList[0]);
+            int frameCount = gif.GetFrameCount(dimension);
+            int[] delays = ReadFrameDelays(gif, frameCount);
+
+            for (int i = 0; i < frameCount; i++)
             {
-                var dimension = new FrameDimension(gif.FrameDimensionsList[0]);
-                int frameCount = gif.GetFrameCount(dimension);
-                int[] delays = ReadFrameDelays(gif, frameCount);
-
-                for (int i = 0; i < frameCount; i++)
+                gif.SelectActiveFrame(dimension, i);
+                using var frame = new Bitmap(gif.Width, gif.Height, PixelFormat.Format32bppPArgb);
+                using (Graphics graphics = Graphics.FromImage(frame))
                 {
-                    gif.SelectActiveFrame(dimension, i);
-                    using (var frame = new Bitmap(gif.Width, gif.Height, PixelFormat.Format32bppPArgb))
-                    {
-                        using (Graphics graphics = Graphics.FromImage(frame))
-                        {
-                            graphics.Clear(System.Drawing.Color.Transparent);
-                            graphics.DrawImage(gif, 0, 0, gif.Width, gif.Height);
-                        }
-
-                        frames.Add(BitmapToBitmapSource(frame));
-                        frameDelays.Add(delays[i]);
-                    }
+                    graphics.Clear(Color.Transparent);
+                    graphics.DrawImage(gif, 0, 0, gif.Width, gif.Height);
                 }
+
+                frames.Add(BitmapToBitmapSource(frame));
+                frameDelays.Add(delays[i]);
             }
         }
 
@@ -154,19 +149,17 @@ namespace VisualStudioPokemon.Services
 
         private static BitmapSource BitmapToBitmapSource(Bitmap bitmap)
         {
-            using (var stream = new MemoryStream())
-            {
-                bitmap.Save(stream, ImageFormat.Png);
-                stream.Position = 0;
+            using var stream = new MemoryStream();
+            bitmap.Save(stream, ImageFormat.Png);
+            stream.Position = 0;
 
-                var image = new BitmapImage();
-                image.BeginInit();
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.StreamSource = stream;
-                image.EndInit();
-                image.Freeze();
-                return image;
-            }
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.StreamSource = stream;
+            image.EndInit();
+            image.Freeze();
+            return image;
         }
     }
 }

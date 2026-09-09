@@ -9,7 +9,7 @@ namespace VisualStudioPokemon.Services
 {
     internal static class PokemonCatalog
     {
-        private static readonly Random Random = new Random();
+        private static readonly Random Random = new();
         private static readonly Lazy<IReadOnlyList<PokemonSpecies>> ItemsLazy = new Lazy<IReadOnlyList<PokemonSpecies>>(LoadSpeciesFromResources);
 
         public static IReadOnlyList<PokemonSpecies> All
@@ -51,10 +51,9 @@ namespace VisualStudioPokemon.Services
                 }
             }
 
-            IReadOnlyList<PokemonSpecies> loaded = byKey.Values
+            IReadOnlyList<PokemonSpecies> loaded = [.. byKey.Values
                 .OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-                .ThenBy(x => x.Generation)
-                .ToList();
+                .ThenBy(x => x.Generation)];
 
             if (loaded.Count > 0)
             {
@@ -62,13 +61,13 @@ namespace VisualStudioPokemon.Services
             }
 
             // Last-resort fallback so the extension still starts if Resources are not copied.
-            return new[]
-            {
+            return
+            [
                 new PokemonSpecies("bulbasaur", "Bulbasaur", 1),
                 new PokemonSpecies("charmander", "Charmander", 1),
                 new PokemonSpecies("squirtle", "Squirtle", 1),
                 new PokemonSpecies("pikachu", "Pikachu", 1)
-            };
+            ];
         }
 
         private static bool HasUsableSprite(string pokemonDirectory)
@@ -83,8 +82,7 @@ namespace VisualStudioPokemon.Services
             string name = Path.GetFileName(generationDirectory) ?? String.Empty;
             if (name.StartsWith("gen", StringComparison.OrdinalIgnoreCase))
             {
-                int value;
-                if (Int32.TryParse(name.Substring(3), out value))
+                if (Int32.TryParse(name.Substring(3), out int value))
                 {
                     return value;
                 }

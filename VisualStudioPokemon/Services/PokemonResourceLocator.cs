@@ -6,7 +6,7 @@ namespace VisualStudioPokemon.Services
 {
     internal static class PokemonResourceLocator
     {
-        private static readonly Lazy<string> ResourcesRootLazy = new Lazy<string>(FindResourcesRoot);
+        private static readonly Lazy<string> ResourcesRootLazy = new(FindResourcesRoot);
 
         public static string ResourcesRoot
         {
@@ -27,11 +27,11 @@ namespace VisualStudioPokemon.Services
         {
             string assemblyFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? AppDomain.CurrentDomain.BaseDirectory;
 
-            string[] directCandidates = new[]
-            {
+            string[] directCandidates =
+            [
                 Path.Combine(assemblyFolder, "Resources"),
                 Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources")
-            };
+            ];
 
             foreach (string candidate in directCandidates)
             {
@@ -42,7 +42,7 @@ namespace VisualStudioPokemon.Services
             }
 
             // Useful while debugging from bin folders: walk upward until a Resources folder is found.
-            DirectoryInfo current = new DirectoryInfo(assemblyFolder);
+            DirectoryInfo current = new(assemblyFolder);
             while (current != null)
             {
                 string candidate = Path.Combine(current.FullName, "Resources");

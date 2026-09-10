@@ -1,0 +1,212 @@
+﻿name: "Release VSIX"
+
+permissions:
+  actions: write
+  checks: write
+  contents: write
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*.*.*"
+
+  pull_request_target:
+    branches: [main]
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    name: Build
+    runs-on: windows-latest
+
+    env:
+      Configuration: Release
+      DeployExtension: False
+      Solution: VisualStudioPokemon.slnx
+      TestProject: VisualStudioPokemon.Test\VisualStudioPokemon.Test.csproj
+      VsixManifestPath: VisualStudioPokemon\source.extension.vsixmanifest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # ------------------------------------------------------------
+      # VERSION
+      # ------------------------------------------------------------
+      #
+      # Releases are driven by Git tags:
+      #
+      #   v1.2.3 -> VSIX version 1.2.3
+      #   v1.3.0 -> VSIX version 1.3.0
+      #   v2.0.0 -> VSIX version 2.0.0
+      #
+      # The leading "v" is removed because the VSIX version must be
+      # a numeric version.
+      #
+      # For normal branch builds, use 0.0.0 as the version.
+      #
+
+      - name: Get version from Git tag
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $version = "${{ github.ref_name }}" -replace '^v', ''
+
+            if ($version -notmatch '^\d+\.\d+\.\d+$') {
+              Write-Error "Invalid version tag: ${{ github.ref_name }}"
+              Write-Error "Expected format: vMAJOR.MINOR.PATCH (for example v1.3.0)"
+              exit 1
+            }
+          }
+          else {
+            $version = "0.0.0"
+          }
+
+          Write-Host "VSIX version: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      # ------------------------------------------------------------
+      # SET VSIX VERSION
+      # ------------------------------------------------------------
+      #
+      # Replace the Version attribute in source.extension.vsixmanifest
+      # with the version taken from the Git tag.
+      #
+
+      - name: Set VSIX version
+        shell: pwsh
+        run: |
+          $manifest = "${{ env.VsixManifestPath }}"
+          $version = "${{ steps.version.outputs.version }}"
+
+          Write-Host "Setting VSIX version to $version"
+
+          $content = Get-Content $manifest -Raw
+
+          $content = $content -replace `
+            '(<Identity\b[^>]*\bVersion=")[^"]*(")', `
+            "`${1}$version`${2}"
+
+          Set-Content -Path $manifest -Value $content -NoNewline
+
+          Write-Host "Updated manifest:"
+          Get-Content $manifest
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.slnx', '**/*.sln', '**/*.csproj', '**/packages.config', '**/packages.lock.json', '**/nuget.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore NuGet packages
+        run: msbuild ${{ env.Solution }} /v:m -restore /t:Restore
+
+      - name: Build
+        run: msbuild ${{ env.Solution }} /v:m /m /p:Configuration=${{ env.Configuration }} /p:DeployExtension=${{ env.DeployExtension }}
+
+      # ------------------------------------------------------------
+      # TEST
+      # ------------------------------------------------------------
+      # Disabilitato temporaneamente.
+      #
+      # - name: Run tests
+      #   run: dotnet test ${{ env.TestProject }} --configuration ${{ env.Configuration }} --no-build --no-restore --verbosity normal --logger:"trx;LogFileName=test-results.trx"
+      #
+      # - name: Report test results
+      #   if: ${{ always() && (github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      #   uses: dorny/test-reporter@v3
+      #   with:
+      #     name: Test Results
+      #     path: '**/test-results.trx'
+      #     reporter: dotnet-trx
+
+      # ------------------------------------------------------------
+      # VSIX ARTIFACT
+      # ------------------------------------------------------------
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ github.event.repository.name }}.vsix
+          path: src\bin\${{ env.Configuration }}\VSPets.vsix
+
+
+  publish:
+    # Publish only for a Git tag or manual workflow execution.
+    if: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
+
+    needs: build
+
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Download Package artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ github.event.repository.name }}.vsix
+
+      # ------------------------------------------------------------
+      # OPEN VSIX
+      # ------------------------------------------------------------
+
+      - name: Upload to Open VSIX
+        uses: madskristensen/publish-vsixgallery@v1
+        with:
+          vsix-file: ${{ github.event.repository.name }}.vsix
+
+      # ------------------------------------------------------------
+      # VISUAL STUDIO MARKETPLACE
+      # ------------------------------------------------------------
+      #
+      # Disabilitato temporaneamente perché richiede un
+      # Personal Access Token (PAT) di Azure DevOps.
+      #
+      # Secret richiesto:
+      #
+      #   VS_PUBLISHER_ACCESS_TOKEN
+      #
+      # Quando il secret sarà configurato, rimuovere i commenti.
+      #
+
+      # - name: Publish extension to Marketplace
+      #   if: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
+      #   uses: madskristensen/publish-marketplace@v2
+      #   with:
+      #     extension-file: '${{ github.event.repository.name }}.vsix'
+      #     publish-manifest-file: 'vs-publish.json'
+      #     personal-access-code: ${{ secrets.VS_PUBLISHER_ACCESS_TOKEN }}
+
+      # ------------------------------------------------------------
+      # GITHUB RELEASE
+      # ------------------------------------------------------------
+      #
+      # The Git tag is already created by you.
+      # This step creates the GitHub Release associated with that tag.
+      #
+
+      - name: Create GitHub Release
+        if: ${{ github.ref_type == 'tag' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          body: release ${{ needs.build.outputs.version }}
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
+          files: |
+            **/*.vsix

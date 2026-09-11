@@ -1,31 +1,61 @@
-﻿name: Build VSIX
+﻿name: Release VSIX
 
 on:
   push:
-    branches: [main]
     tags:
       - "v*.*.*"
 
-  pull_request:
-    branches: [main]
-
-  workflow_dispatch:
-
 permissions:
-  actions: write
+  contents: write
 
 jobs:
-  build:
-    name: Build VSIX
+  release:
+    name: Build and publish VSIX
     runs-on: windows-latest
 
     env:
       Configuration: Release
       Solution: VisualStudioPokemon.slnx
+      VsixManifestPath: VisualStudioPokemon\source.extension.vsixmanifest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Get version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
+            Write-Error "Invalid tag: $tag. Expected vMAJOR.MINOR.PATCH"
+            exit 1
+          }
+
+          $version = $Matches[1]
+
+          Write-Host "Release version: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Set VSIX version
+        shell: pwsh
+        run: |
+          $manifest = "${{ env.VsixManifestPath }}"
+          $version = "${{ steps.version.outputs.version }}"
+
+          $content = Get-Content $manifest -Raw
+
+          $content = $content -replace `
+            '(<Identity\b[^>]*\bVersion=")[^"]*(")', `
+            "`${1}$version`${2}"
+
+          Set-Content `
+            -Path $manifest `
+            -Value $content `
+            -NoNewline
+
+          Write-Host "VSIX version set to $version"
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
@@ -44,7 +74,7 @@ jobs:
           /restore
           /v:minimal
 
-      - name: Build
+      - name: Build VSIX
         run: >
           msbuild "${{ env.Solution }}"
           /m
@@ -52,8 +82,7 @@ jobs:
           /p:Configuration=${{ env.Configuration }}
           /p:DeployExtension=False
 
-      - name: Find generated VSIX
-        id: vsix
+      - name: Prepare VSIX for release
         shell: pwsh
         run: |
           $files = @(
@@ -64,24 +93,28 @@ jobs:
             Where-Object { $_.FullName -match '\\bin\\Release\\' }
           )
 
-          if ($files.Count -eq 0) {
-            Write-Error "The build did not produce a VSIX file."
-            exit 1
-          }
-
-          if ($files.Count -gt 1) {
-            Write-Host "Multiple VSIX files were found:"
+          if ($files.Count -ne 1) {
+            Write-Host "VSIX files found:"
             $files.FullName | ForEach-Object { Write-Host $_ }
-            Write-Error "Expected exactly one VSIX file."
+
+            Write-Error "Expected exactly one VSIX, found $($files.Count)."
             exit 1
           }
 
-          Write-Host "Found VSIX: $($files[0].FullName)"
-          "path=$($files[0].FullName)" >> $env:GITHUB_OUTPUT
+          $releaseDirectory = Join-Path $env:GITHUB_WORKSPACE "release"
+          New-Item $releaseDirectory -ItemType Directory -Force | Out-Null
 
-      - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v7
+          $releaseName = "${{ github.event.repository.name }}-${{ steps.version.outputs.version }}.vsix"
+          $destination = Join-Path $releaseDirectory $releaseName
+
+          Copy-Item $files[0].FullName $destination
+
+          Write-Host "Release file: $destination"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
         with:
-          name: ${{ github.event.repository.name }}-${{ github.run_number }}
-          path: ${{ steps.vsix.outputs.path }}
-          if-no-files-found: error
+          name: Release ${{ steps.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release/*.vsix

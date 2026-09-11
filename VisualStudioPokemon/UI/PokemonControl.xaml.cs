@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -16,6 +16,7 @@ using System.Windows.Threading;
 using VisualStudioPokemon.Models;
 using VisualStudioPokemon.Options;
 using VisualStudioPokemon.Services;
+using static VisualStudioPokemon.UI.PokemonControl;
 using DrawingColor = System.Drawing.Color;
 using MediaColor = System.Windows.Media.Color;
 
@@ -25,6 +26,7 @@ namespace VisualStudioPokemon.UI
     {
         private const double PlaygroundPadding = 12;
         private const double MinimumCompanionGap = 8;
+        private const double OverlayPokemonOffsetY = 10;
 
         private readonly Random random = new();
         private readonly DispatcherTimer animationTimer;
@@ -341,9 +343,28 @@ namespace VisualStudioPokemon.UI
                 companion.TargetY = companion.BaseY;
                 ClampToPlayground(companion);
                 Position(companion, 0);
+                UpdateNicknamePosition(companion);
             }
 
             UpdateStatus();
+        }
+
+        private void UpdateNicknamePosition(Companion companion)
+        {
+            if (mainWindowMode)
+            {
+                // Overlay mode: nickname above the Pokémon
+                Grid.SetRow(companion.NicknameLabel, 0);
+                companion.NicknameLabel.VerticalAlignment = VerticalAlignment.Top;
+                companion.NicknameLabel.Margin = new Thickness(0, -18, 0, 0);
+            }
+            else
+            {
+                // Tool Window mode: nickname below the Pokémon
+                Grid.SetRow(companion.NicknameLabel, 1);
+                companion.NicknameLabel.VerticalAlignment = VerticalAlignment.Center;
+                companion.NicknameLabel.Margin = new Thickness(0);
+            }
         }
 
         private void UpdateOverlayHeight()
@@ -415,7 +436,7 @@ namespace VisualStudioPokemon.UI
                     Opacity = 0.7
                 }
             };
-            Grid.SetRow(label, 1);
+
             Panel.SetZIndex(label, 20);
             root.Children.Add(label);
 
@@ -432,6 +453,8 @@ namespace VisualStudioPokemon.UI
                 Phase = random.NextDouble() * Math.PI * 2,
                 HoldFrames = random.Next(45, 110)
             };
+
+            UpdateNicknamePosition(companion);
 
             companion.Speed = companion.BaseSpeed * GetMovementSpeedMultiplier();
 
@@ -823,8 +846,13 @@ namespace VisualStudioPokemon.UI
         {
             if (mainWindowMode)
             {
-                double height = ActivePlayground.ActualHeight > 1 ? ActivePlayground.ActualHeight : mainWindowOverlay.Height;
-                return Math.Max(0, height - companion.Visual.Height);
+                double height = ActivePlayground.ActualHeight > 1
+                    ? ActivePlayground.ActualHeight
+                    : mainWindowOverlay.Height;
+
+                return Math.Max(
+                    0,
+                    height - companion.Visual.Height + OverlayPokemonOffsetY);
             }
 
             return PlaygroundPadding;

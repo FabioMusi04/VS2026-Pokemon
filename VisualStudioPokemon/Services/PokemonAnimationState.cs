@@ -11,5 +11,6 @@ namespace VisualStudioPokemon.Services
     internal interface IPokemonSpriteView
     {
         void SetAnimation(PokemonAnimationState state);
+        void SetOverlayRendering(bool enabled);
     }
 }

@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,6 +11,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -43,6 +45,15 @@ namespace VisualStudioPokemon.UI
         private bool suppressCompanionSelection;
         private Companion? selectedCompanion;
         private Delegate? vsThemeChangedHandler;
+        private bool globalSelectionTrackingHooked;
+        private bool selectionClearPending;
+        private int previousPhysicalMouseButtons;
+
+        private const int VkLeftButton = 0x01;
+        private const int VkRightButton = 0x02;
+        private const int VkMiddleButton = 0x04;
+        private const int VkXButton1 = 0x05;
+        private const int VkXButton2 = 0x06;
 
         public PokemonControl()
         {
@@ -84,6 +95,7 @@ namespace VisualStudioPokemon.UI
             Loaded += PokemonControl_Loaded;
             Unloaded += PokemonControl_Unloaded;
             PokemonOptionsPage.OptionsApplied += PokemonOptionsPage_OptionsApplied;
+            HookGlobalSelectionTracking();
         }
 
         private PokemonOptionsPage? CurrentOptions => VisualStudioPokemonPackage.Instance?.Options;
@@ -339,6 +351,7 @@ namespace VisualStudioPokemon.UI
             overlayUnavailable = false;
             foreach (Companion companion in companions)
             {
+                companion.Sprite.SetOverlayRendering(mainWindowMode);
                 companion.BaseY = MovementMinY(companion);
                 companion.TargetY = companion.BaseY;
                 ClampToPlayground(companion);
@@ -370,6 +383,11 @@ namespace VisualStudioPokemon.UI
         private void UpdateOverlayHeight()
         {
             mainWindowOverlay.Height = GetLaneHeight();
+            if (mainWindowMode)
+            {
+                VisualStudioStatusBarOverlay.RefreshPosition();
+            }
+
             if (!mainWindowMode)
             {
                 return;
@@ -454,6 +472,7 @@ namespace VisualStudioPokemon.UI
                 HoldFrames = random.Next(45, 110)
             };
 
+            companion.Sprite.SetOverlayRendering(mainWindowMode);
             UpdateNicknamePosition(companion);
 
             companion.Speed = companion.BaseSpeed * GetMovementSpeedMultiplier();
@@ -468,12 +487,6 @@ namespace VisualStudioPokemon.UI
             {
                 SelectCompanion(companion, fromList: false);
                 Swipe(companion);
-                args.Handled = true;
-            };
-
-            root.MouseRightButtonDown += delegate (object clickSender, MouseButtonEventArgs args)
-            {
-                SelectCompanion(companion, fromList: false);
                 args.Handled = true;
             };
 
@@ -493,6 +506,13 @@ namespace VisualStudioPokemon.UI
             {
                 Background = GetBrushResource("Pokemon.ControlBackgroundBrush", Brushes.DimGray),
                 Foreground = GetBrushResource("Pokemon.TextBrush", Brushes.White)
+            };
+
+            contextMenu.Opened += delegate
+            {
+                // Select on menu open instead of consuming the right-button event. Letting WPF
+                // handle the complete context-menu mouse sequence avoids popup rendering/input glitches.
+                SelectCompanion(companion, fromList: false);
             };
 
             contextMenu.Items.Add(removeThisMenuItem);
@@ -580,6 +600,8 @@ namespace VisualStudioPokemon.UI
 
         private void AnimationTimer_Tick(object sender, EventArgs e)
         {
+            TrackPhysicalMouseSelection();
+
             if (companions.Count == 0 || ActivePlayground.ActualWidth <= 1 || ActivePlayground.ActualHeight <= 1)
             {
                 return;
@@ -790,8 +812,27 @@ namespace VisualStudioPokemon.UI
 
         private void Position(Companion companion, double bob)
         {
-            Canvas.SetLeft(companion.Visual, companion.X);
-            Canvas.SetTop(companion.Visual, companion.BaseY + bob);
+            double x = companion.X;
+            double y = companion.BaseY + bob;
+
+            if (mainWindowMode)
+            {
+                // Canvas.Left/Top can contain fractional DIPs because movement speed and
+                // bobbing are fractional. In the transparent status-bar overlay those
+                // sub-pixel translations cause the bitmap to be re-sampled every frame,
+                // making larger sprites look soft. Align the final translation to the
+                // physical pixel grid of the overlay monitor.
+                PresentationSource? source = PresentationSource.FromVisual(mainWindowPlayground);
+                Matrix toDevice = source?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
+                double scaleX = Math.Abs(toDevice.M11) > 0.001 ? Math.Abs(toDevice.M11) : 1.0;
+                double scaleY = Math.Abs(toDevice.M22) > 0.001 ? Math.Abs(toDevice.M22) : 1.0;
+
+                x = Math.Round(x * scaleX) / scaleX;
+                y = Math.Round(y * scaleY) / scaleY;
+            }
+
+            Canvas.SetLeft(companion.Visual, x);
+            Canvas.SetTop(companion.Visual, y);
         }
 
         private void ClampToPlayground(Companion companion)
@@ -873,6 +914,189 @@ namespace VisualStudioPokemon.UI
             return Math.Max(PlaygroundPadding, ActivePlayground.ActualHeight - PlaygroundPadding - companion.Visual.Height);
         }
 
+        private void HookGlobalSelectionTracking()
+        {
+            if (globalSelectionTrackingHooked)
+            {
+                return;
+            }
+
+            ComponentDispatcher.ThreadPreprocessMessage += ComponentDispatcher_ThreadPreprocessMessage;
+            if (Application.Current != null)
+            {
+                Application.Current.Deactivated += Application_Deactivated;
+            }
+
+            globalSelectionTrackingHooked = true;
+        }
+
+        private void Application_Deactivated(object? sender, EventArgs e)
+        {
+            QueueClearSelection();
+        }
+
+        private void ComponentDispatcher_ThreadPreprocessMessage(ref MSG msg, ref bool handled)
+        {
+            if (handled || selectedCompanion == null || !IsMouseButtonDownMessage(msg.message))
+            {
+                return;
+            }
+
+            if (!GetCursorPos(out NativePoint cursor))
+            {
+                return;
+            }
+
+            var screenPoint = new Point(cursor.X, cursor.Y);
+            if (ShouldKeepSelectionAt(screenPoint))
+            {
+                return;
+            }
+
+            QueueClearSelection();
+        }
+
+        private void TrackPhysicalMouseSelection()
+        {
+            int downButtons = 0;
+            int pressedButtons = 0;
+
+            ReadPhysicalMouseButton(VkLeftButton, 1, ref downButtons, ref pressedButtons);
+            ReadPhysicalMouseButton(VkRightButton, 2, ref downButtons, ref pressedButtons);
+            ReadPhysicalMouseButton(VkMiddleButton, 4, ref downButtons, ref pressedButtons);
+            ReadPhysicalMouseButton(VkXButton1, 8, ref downButtons, ref pressedButtons);
+            ReadPhysicalMouseButton(VkXButton2, 16, ref downButtons, ref pressedButtons);
+
+            // The high bit catches a normal down transition. The low bit catches quick clicks
+            // that started and ended between two animation ticks. This polling is intentional:
+            // native HWND-hosted surfaces such as Developer PowerShell do not necessarily send
+            // their mouse messages through WPF's ComponentDispatcher.
+            pressedButtons |= downButtons & ~previousPhysicalMouseButtons;
+            previousPhysicalMouseButtons = downButtons;
+
+            if (selectedCompanion == null || pressedButtons == 0 || !GetCursorPos(out NativePoint cursor))
+            {
+                return;
+            }
+
+            var screenPoint = new Point(cursor.X, cursor.Y);
+            if (!ShouldKeepSelectionAt(screenPoint))
+            {
+                QueueClearSelection();
+            }
+        }
+
+        private static void ReadPhysicalMouseButton(int virtualKey, int mask, ref int downButtons, ref int pressedButtons)
+        {
+            short state = GetAsyncKeyState(virtualKey);
+            if ((state & unchecked((short)0x8000)) != 0)
+            {
+                downButtons |= mask;
+            }
+
+            if ((state & 0x0001) != 0)
+            {
+                pressedButtons |= mask;
+            }
+        }
+
+        private bool ShouldKeepSelectionAt(Point screenPoint)
+        {
+            return IsPointOverCompanion(screenPoint)
+                || IsPointOverElement(RemoveSelectedButton, screenPoint)
+                || SpawnedCombo.IsDropDownOpen
+                || IsPointOverElement(SpawnedCombo, screenPoint);
+        }
+
+        private static bool IsMouseButtonDownMessage(int message)
+        {
+            return message == 0x0201 // WM_LBUTTONDOWN
+                || message == 0x0204 // WM_RBUTTONDOWN
+                || message == 0x0207 // WM_MBUTTONDOWN
+                || message == 0x020B // WM_XBUTTONDOWN
+                || message == 0x00A1 // WM_NCLBUTTONDOWN
+                || message == 0x00A4 // WM_NCRBUTTONDOWN
+                || message == 0x00A7 // WM_NCMBUTTONDOWN
+                || message == 0x00AB; // WM_NCXBUTTONDOWN
+        }
+
+        private static bool IsPointOverElement(FrameworkElement element, Point screenPoint)
+        {
+            if (!element.IsVisible || element.ActualWidth <= 0 || element.ActualHeight <= 0 || PresentationSource.FromVisual(element) == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                Point local = element.PointFromScreen(screenPoint);
+                return local.X >= 0 && local.Y >= 0 && local.X <= element.ActualWidth && local.Y <= element.ActualHeight;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+
+        private bool IsPointOverCompanion(Point screenPoint)
+        {
+            foreach (Companion companion in companions)
+            {
+                FrameworkElement visual = companion.Visual;
+                if (!visual.IsVisible || visual.ActualWidth <= 0 || visual.ActualHeight <= 0 || PresentationSource.FromVisual(visual) == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Point local = visual.PointFromScreen(screenPoint);
+                    if (local.X >= -6 && local.Y >= -6 && local.X <= visual.ActualWidth + 6 && local.Y <= visual.ActualHeight + 6)
+                    {
+                        return true;
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                    // The visual can be reparented while switching display mode; ignore that frame.
+                }
+            }
+
+            return false;
+        }
+
+        private void QueueClearSelection()
+        {
+            if (selectedCompanion == null || selectionClearPending)
+            {
+                return;
+            }
+
+            selectionClearPending = true;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                selectionClearPending = false;
+                if (selectedCompanion != null)
+                {
+                    SelectCompanion(null, fromList: false);
+                }
+            }), DispatcherPriority.ContextIdle);
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativePoint
+        {
+            public int X;
+            public int Y;
+        }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetCursorPos(out NativePoint point);
+
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int virtualKey);
+
         private void SelectCompanion(Companion? companion, bool fromList)
         {
             _ = fromList;
@@ -915,7 +1139,7 @@ namespace VisualStudioPokemon.UI
 
             if (ReferenceEquals(selectedCompanion, companion))
             {
-                selectedCompanion = companions.FirstOrDefault();
+                selectedCompanion = null;
             }
 
             ApplySelectedCompanionVisuals();

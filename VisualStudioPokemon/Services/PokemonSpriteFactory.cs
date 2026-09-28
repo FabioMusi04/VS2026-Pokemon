@@ -127,6 +127,18 @@ namespace VisualStudioPokemon.Services
                 Children.Add(image);
             }
 
+            public void SetOverlayRendering(bool enabled)
+            {
+                // The status-bar mode is hosted in a transparent top-level WPF window.
+                // At fractional screen positions WPF otherwise filters pixel-art sprites,
+                // which is especially noticeable on the Large size. Keep the normal
+                // tool-window rendering untouched and use pixel-preserving sampling only
+                // in the overlay.
+                RenderOptions.SetBitmapScalingMode(
+                    image,
+                    enabled ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.Unspecified);
+            }
+
             public void SetAnimation(PokemonAnimationState state)
             {
                 string? path = FindSpritePath(spec, state);

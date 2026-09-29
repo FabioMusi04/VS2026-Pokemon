@@ -54,7 +54,7 @@ namespace VisualStudioPokemon.UI
         private const int VkMiddleButton = 0x04;
         private const int VkXButton1 = 0x05;
         private const int VkXButton2 = 0x06;
-
+        private bool windowOpenAnimationPlayed;
         public PokemonControl()
         {
             InitializeComponent();
@@ -195,7 +195,15 @@ namespace VisualStudioPokemon.UI
             await ApplyDisplayModeAsync(CurrentOptions?.WalkAlongVisualStudioStatusBar == true);
             UpdateSelectionUi();
             UpdateStatus();
-            Dispatcher.BeginInvoke(new Action(PlayWindowOpenAnimation), DispatcherPriority.Loaded);
+
+            if (!windowOpenAnimationPlayed)
+            {
+                windowOpenAnimationPlayed = true;
+
+                Dispatcher.BeginInvoke(
+                    new Action(PlayWindowOpenAnimation),
+                    DispatcherPriority.Loaded);
+            }
         }
 
         private void PokemonControl_Unloaded(object sender, RoutedEventArgs e)

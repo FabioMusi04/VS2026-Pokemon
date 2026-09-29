@@ -5,7 +5,6 @@
     <DisplayName>VisualStudioPokemon</DisplayName>
     <Description>Bring animated Pokémon companions to Microsoft Visual Studio. Choose your favorite Pokémon and enjoy a fun coding companion while you work.</Description>
     <PreviewImage>Resources/icon.png</PreviewImage>
-    <Preview>true</Preview>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.14, )">
